@@ -1,0 +1,21 @@
+{
+  "environment": "development",
+  "games": [
+    {
+      "id": "color-quest",
+      "displayName": "Color Quest",
+      "adapters": ["color-quest-daily-v1"],
+      "secretPrefix": "BANTAM_GAME_COLOR_QUEST",
+      "gracePeriodHours": 48,
+      "authProvider": "development"
+    },
+    {
+      "id": "moon-gravity-demo",
+      "displayName": "Moon Gravity Adapter Template",
+      "adapters": ["moon-gravity-template-v1"],
+      "secretPrefix": "BANTAM_GAME_MOON_GRAVITY",
+      "gracePeriodHours": 24,
+      "authProvider": "development"
+    }
+  ]
+}

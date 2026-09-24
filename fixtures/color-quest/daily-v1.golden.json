@@ -1,0 +1,305 @@
+{
+  "fixtureVersion": 1,
+  "source": "Color Quest daily-v1 authoritative validation contract",
+  "generatedBy": "npm run fixtures:generate",
+  "validComplete": {
+    "runId": "fixture-complete-0001",
+    "utcDate": "2026-09-23",
+    "rulesVersion": "daily-v1",
+    "seed": "daily-v1:2026-09-23",
+    "score": 453,
+    "distanceMeters": 0,
+    "activeTimeMs": 100000,
+    "completed": true,
+    "gatesCleared": 20,
+    "eventLedger": [
+      {
+        "type": "gate",
+        "gate": 1,
+        "obstacleId": "daily-v1:2026-09-23-0",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 5000,
+        "points": 19,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 2,
+        "obstacleId": "daily-v1:2026-09-23-1",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 10000,
+        "points": 19,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 3,
+        "obstacleId": "daily-v1:2026-09-23-2",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 15000,
+        "points": 21,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 4,
+        "obstacleId": "daily-v1:2026-09-23-3",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 20000,
+        "points": 21,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 5,
+        "obstacleId": "daily-v1:2026-09-23-4",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 25000,
+        "points": 21,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 6,
+        "obstacleId": "daily-v1:2026-09-23-5",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 30000,
+        "points": 22,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 7,
+        "obstacleId": "daily-v1:2026-09-23-6",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 35000,
+        "points": 22,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 8,
+        "obstacleId": "daily-v1:2026-09-23-7",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 40000,
+        "points": 22,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 9,
+        "obstacleId": "daily-v1:2026-09-23-8",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 45000,
+        "points": 22,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 10,
+        "obstacleId": "daily-v1:2026-09-23-9",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 50000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 11,
+        "obstacleId": "daily-v1:2026-09-23-10",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 55000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 12,
+        "obstacleId": "daily-v1:2026-09-23-11",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 60000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 13,
+        "obstacleId": "daily-v1:2026-09-23-12",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 65000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 14,
+        "obstacleId": "daily-v1:2026-09-23-13",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 70000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 15,
+        "obstacleId": "daily-v1:2026-09-23-14",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 75000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 16,
+        "obstacleId": "daily-v1:2026-09-23-15",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 80000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 17,
+        "obstacleId": "daily-v1:2026-09-23-16",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 85000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 18,
+        "obstacleId": "daily-v1:2026-09-23-17",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 90000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 19,
+        "obstacleId": "daily-v1:2026-09-23-18",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 95000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 20,
+        "obstacleId": "daily-v1:2026-09-23-19",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 100000,
+        "points": 24,
+        "pace": 9
+      },
+      {
+        "type": "end",
+        "activeMs": 100000,
+        "reason": "daily_complete"
+      }
+    ],
+    "createdAtMs": 1790164800000
+  },
+  "validPartial": {
+    "runId": "fixture-partial-0001",
+    "utcDate": "2026-09-23",
+    "rulesVersion": "daily-v1",
+    "seed": "daily-v1:2026-09-23",
+    "score": 38,
+    "distanceMeters": 0,
+    "activeTimeMs": 10000,
+    "completed": false,
+    "gatesCleared": 2,
+    "eventLedger": [
+      {
+        "type": "gate",
+        "gate": 1,
+        "obstacleId": "daily-v1:2026-09-23-0",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 5000,
+        "points": 19,
+        "pace": 9
+      },
+      {
+        "type": "gate",
+        "gate": 2,
+        "obstacleId": "daily-v1:2026-09-23-1",
+        "result": "regular",
+        "alignment": 0.5,
+        "gateActiveMs": 5000,
+        "activeMs": 10000,
+        "points": 19,
+        "pace": 9
+      },
+      {
+        "type": "end",
+        "activeMs": 10000,
+        "reason": "quit"
+      }
+    ],
+    "createdAtMs": 1790164800000
+  },
+  "rejectionClasses": [
+    "wrong-date",
+    "wrong-seed",
+    "wrong-rules",
+    "reordered-event",
+    "event-after-end",
+    "duplicate-pickup",
+    "excess-pickup",
+    "pickup-route-mismatch",
+    "gate-order",
+    "score-tampering",
+    "time-tampering",
+    "completion-tampering",
+    "shield-underflow",
+    "forbidden-revive",
+    "oversized-ledger",
+    "expired-submission",
+    "impossible-completion-time",
+    "altered-run-id"
+  ]
+}
