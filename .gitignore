@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.npm-cache*/
+.env
+.env.*
+!.env.example
+data/
+*.sqlite
+*.sqlite-*
+litestream.generated.yml
+deploy/credentials.local/
+test-results/

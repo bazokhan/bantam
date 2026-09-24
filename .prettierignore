@@ -1,0 +1,4 @@
+openapi/
+dist/
+coverage/
+packages/sdk/dist/

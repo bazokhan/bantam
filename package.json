@@ -1,0 +1,55 @@
+{
+  "name": "@gamercury/bantam",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && npm run build -w @gamercury/bantam-sdk",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit && npm run typecheck -w @gamercury/bantam-sdk",
+    "test": "vitest run",
+    "test:unit": "vitest run test/bantam.test.ts",
+    "test:integration": "vitest run test/bantam.test.ts",
+    "test:cross-repo": "tsx scripts/check-example-title-contract.ts",
+    "fixtures:generate": "tsx scripts/generate-example-title-fixtures.ts",
+    "fixtures:check": "tsx scripts/generate-example-title-fixtures.ts --check",
+    "smoke:http": "tsx scripts/http-smoke.ts",
+    "openapi:generate": "tsx scripts/generate-openapi.ts",
+    "openapi:check": "tsx scripts/generate-openapi.ts --check",
+    "litestream:config": "tsx scripts/generate-litestream-config.ts",
+    "ops": "tsx src/ops/cli.ts",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run fixtures:check && npm test && npm run build && npm run openapi:check"
+  },
+  "dependencies": {
+    "@fastify/cors": "11.3.0",
+    "@fastify/helmet": "13.0.2",
+    "@fastify/swagger": "9.6.1",
+    "@fastify/type-provider-typebox": "6.1.0",
+    "@sinclair/typebox": "0.34.41",
+    "better-sqlite3": "12.4.1",
+    "fastify": "5.12.5",
+    "jose": "6.1.0",
+    "pino": "9.11.0",
+    "prom-client": "15.1.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "24.7.2",
+    "eslint": "9.38.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.1",
+    "vitest": "5.0.1"
+  }
+}

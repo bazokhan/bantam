@@ -1,0 +1,41 @@
+{
+  "fixtureVersion": 1,
+  "source": "Example daily-v1 deterministic route contract",
+  "routes": [
+    {
+      "date": "2026-01-01",
+      "seed": "daily-v1:2026-01-01",
+      "startColorIndex": 0,
+      "totalDistancePx": 9345,
+      "routeSha256": "e8da59f273b1a3e88c855c9861e0281df5b143f316ba777b906d0b8f0a9200e0"
+    },
+    {
+      "date": "2026-09-23",
+      "seed": "daily-v1:2026-09-23",
+      "startColorIndex": 1,
+      "totalDistancePx": 9295,
+      "routeSha256": "01296700415ba89469e6f6b5a794ecb8f8f877e5eae281d4096c30e6a466f95a"
+    },
+    {
+      "date": "2028-02-29",
+      "seed": "daily-v1:2028-02-29",
+      "startColorIndex": 1,
+      "totalDistancePx": 9147,
+      "routeSha256": "abca131a5bbefcc7cb07954f14a213756c6df585e42a99986af32a1b7b26d520"
+    }
+  ],
+  "requiredRejections": [
+    "invalid-route",
+    "invalid-rules-version",
+    "event-order",
+    "duplicate-pickup",
+    "gate-order",
+    "score-mismatch",
+    "time-mismatch",
+    "completion-mismatch",
+    "shield-underflow",
+    "daily-revive-forbidden",
+    "impossible-completion-time",
+    "expired-day"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "environment": "development",
+  "games": [
+    {
+      "id": "example-title",
+      "displayName": "Example",
+      "adapters": ["example-title-daily-v1"],
+      "secretPrefix": "BANTAM_GAME_EXAMPLE",
+      "gracePeriodHours": 48,
+      "authProvider": "development"
+    },
+    {
+      "id": "example-game-demo",
+      "displayName": "a game Adapter Template",
+      "adapters": ["example-game-template-v1"],
+      "secretPrefix": "BANTAM_GAME_EXAMPLE",
+      "gracePeriodHours": 24,
+      "authProvider": "development"
+    }
+  ]
+}

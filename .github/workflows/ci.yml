@@ -1,0 +1,43 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npm audit --omit=dev --audit-level=high
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - run: docker build --tag bantam:ci .
+      - run: docker compose up -d --wait
+      - run: curl --fail http://127.0.0.1:3000/readyz
+      - run: npm run smoke:http
+      - run: sleep 3
+      - run: docker volume create bantam-ci-restore
+      - name: Restore replica and verify integrity
+        run: >-
+          docker run --rm --network bantam_default --env-file .env.demo
+          -e BANTAM_CONFIG_FILE=/etc/bantam/games.json -e BANTAM_DATA_DIR=/data
+          -e LITESTREAM_CONFIG=/data/litestream.generated.yml
+          -e LITESTREAM_REPLICA_URL=s3://bantam-local/backups
+          -e LITESTREAM_ENDPOINT=http://minio:9000 -e LITESTREAM_FORCE_PATH_STYLE=true
+          -e AWS_ACCESS_KEY_ID=bantam-demo -e AWS_SECRET_ACCESS_KEY=bantam-demo-password
+          -e AWS_REGION=us-east-1 -v bantam-ci-restore:/data
+          -v "$PWD/config/games.demo.json:/etc/bantam/games.json:ro"
+          --entrypoint sh bantam:local -c
+          "node dist/ops/generate-litestream-config.js && node dist/ops/cli.js restore-if-missing example-title && node dist/ops/cli.js integrity example-title"
+      - if: always()
+        run: docker compose logs --no-color
+      - if: always()
+        run: docker compose down --volumes
+      - if: always()
+        run: docker volume rm bantam-ci-restore || true

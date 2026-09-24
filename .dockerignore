@@ -1,0 +1,9 @@
+.git
+node_modules
+dist
+coverage
+.npm-cache*
+data
+deploy/credentials.local
+.env*
+test-results
