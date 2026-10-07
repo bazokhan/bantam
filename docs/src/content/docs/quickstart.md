@@ -39,9 +39,7 @@ Paste this manifest into the Manifest page:
       "id": "demo",
       "displayName": "Demo",
       "adapters": [
-        { "kind": "generic", "boards": [
-          { "id": "high_score", "direction": "higher", "period": "all_time" }
-        ] }
+        { "kind": "generic", "boards": [{ "id": "high_score", "direction": "higher", "period": "all_time" }] }
       ],
       "secretPrefix": "BANTAM_GAME_DEMO",
       "gracePeriodHours": 24,

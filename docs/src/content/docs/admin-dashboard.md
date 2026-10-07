@@ -18,6 +18,7 @@ The first-admin registration gate is the only thing protecting admin access on a
 `GET /admin/login` renders a username + password form. `POST /admin/login` accepts the form, verifies the password (scrypt with `N=16384,r=8,p=1`), and on success issues a session cookie.
 
 The session cookie (`bantam_admin`) is:
+
 - `HttpOnly` — not readable by JavaScript.
 - `SameSite=Strict` — never sent on cross-origin navigation.
 - `Secure` — HTTPS only, except when `BANTAM_ADMIN_COOKIE_SECURE=false` (for local HTTP testing).
@@ -40,6 +41,7 @@ Any `/admin/*` request without a valid cookie is redirected to `/admin/login?nex
 If the resolved path is read-only (e.g. a `:ro` mount in compose), the editor is disabled and the page shows a banner explaining how to switch to a writable path. Save fails with a clear error pointing at the read-only file.
 
 After a successful save, the server hot-reloads:
+
 - New games open their SQLite file at `/data/games/<id>/bantam.sqlite`, run migrations, and synthesize any `generic` adapters.
 - Removed games are closed and their SQLite files left in place on disk (operator decision to delete or restore).
 - Unchanged games are left alone.
@@ -48,21 +50,21 @@ A successful save redirects to `/admin/manifest?saved=1`.
 
 ## Routes
 
-| Method | Path                | Purpose                                                              |
-| ------ | ------------------- | -------------------------------------------------------------------- |
-| GET    | `/admin/`           | Landing page (link grid + empty/no-games banner).                    |
-| GET    | `/admin/login`      | Login form (or auto-redirects to `/admin/` if already authenticated). |
-| POST   | `/admin/login`      | Submit credentials, issue session cookie.                            |
-| GET    | `/admin/register`   | First-admin registration form. 404 once any admin exists.            |
-| POST   | `/admin/register`   | Create inaugural admin. 404 once any admin exists.                  |
-| POST   | `/admin/logout`     | Revoke session, clear cookie, redirect to login.                    |
-| GET    | `/admin/games`      | Per-game table (id, display name, adapter count, db readiness).       |
-| GET    | `/admin/games/:id`  | Manifest, boards, top 10 for the first generic board.                 |
-| GET    | `/admin/games/:id/runs` | Last 20 runs (runId, adapterId, createdAt, payloadHash only).   |
-| GET    | `/admin/adapters`   | Loaded adapters + which games reference them.                        |
-| GET    | `/admin/health`     | Per-game db readiness and adapter coverage.                           |
-| GET    | `/admin/manifest`   | Manifest editor (read + write form).                                  |
-| POST   | `/admin/manifest`   | Save + reload runtimes.                                                |
+| Method | Path                    | Purpose                                                               |
+| ------ | ----------------------- | --------------------------------------------------------------------- |
+| GET    | `/admin/`               | Landing page (link grid + empty/no-games banner).                     |
+| GET    | `/admin/login`          | Login form (or auto-redirects to `/admin/` if already authenticated). |
+| POST   | `/admin/login`          | Submit credentials, issue session cookie.                             |
+| GET    | `/admin/register`       | First-admin registration form. 404 once any admin exists.             |
+| POST   | `/admin/register`       | Create inaugural admin. 404 once any admin exists.                    |
+| POST   | `/admin/logout`         | Revoke session, clear cookie, redirect to login.                      |
+| GET    | `/admin/games`          | Per-game table (id, display name, adapter count, db readiness).       |
+| GET    | `/admin/games/:id`      | Manifest, boards, top 10 for the first generic board.                 |
+| GET    | `/admin/games/:id/runs` | Last 20 runs (runId, adapterId, createdAt, payloadHash only).         |
+| GET    | `/admin/adapters`       | Loaded adapters + which games reference them.                         |
+| GET    | `/admin/health`         | Per-game db readiness and adapter coverage.                           |
+| GET    | `/admin/manifest`       | Manifest editor (read + write form).                                  |
+| POST   | `/admin/manifest`       | Save + reload runtimes.                                               |
 
 ## Trust
 
