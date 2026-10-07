@@ -74,6 +74,14 @@ export default defineConfig({
         },
         {
           tag: "script",
+          attrs: {
+            defer: "",
+            src: "https://analytics.trugraph.io/script.js",
+            "data-website-id": "520ec161-51d1-492a-92a3-359b2e2df993",
+          },
+        },
+        {
+          tag: "script",
           content: `(function(){try{var k='bantam-font';var saved=localStorage.getItem(k);var initial=saved==='system'?'system':'pixel';document.documentElement.dataset.font=initial;function render(){var cur=document.documentElement.dataset.font==='system'?'system':'pixel';var btn=document.getElementById('font-toggle');if(btn){btn.dataset.active=cur;var lbl=btn.querySelector('.label');if(lbl)lbl.textContent=cur==='system'?'System':'Pixel';var g=btn.querySelector('.glyph');if(g)g.textContent=cur==='system'?'Aa':'Px';}}document.addEventListener('DOMContentLoaded',function(){var btn=document.createElement('button');btn.id='font-toggle';btn.className='font-toggle';btn.type='button';btn.setAttribute('aria-label','Toggle font');btn.innerHTML='<span class="glyph">Px</span><span class="label">Pixel</span>';btn.addEventListener('click',function(){var cur=document.documentElement.dataset.font==='system'?'system':'pixel';var next=cur==='system'?'pixel':'system';document.documentElement.dataset.font=next;try{localStorage.setItem(k,next);}catch(e){}render();});document.body.appendChild(btn);render();});}catch(e){}})();`,
         },
       ],
