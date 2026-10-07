@@ -2,18 +2,23 @@
   "environment": "development",
   "games": [
     {
-      "id": "color-quest",
-      "displayName": "Color Quest",
-      "adapters": ["color-quest-daily-v1"],
-      "secretPrefix": "BANTAM_GAME_COLOR_QUEST",
-      "gracePeriodHours": 48,
+      "id": "demo",
+      "displayName": "Generic demo (no code)",
+      "adapters": [
+        {
+          "kind": "generic",
+          "boards": [{ "id": "high_score", "direction": "higher", "period": "all_time" }]
+        }
+      ],
+      "secretPrefix": "BANTAM_GAME_DEMO",
+      "gracePeriodHours": 24,
       "authProvider": "development"
     },
     {
-      "id": "moon-gravity-demo",
-      "displayName": "Moon Gravity Adapter Template",
-      "adapters": ["moon-gravity-template-v1"],
-      "secretPrefix": "BANTAM_GAME_MOON_GRAVITY",
+      "id": "echo-demo",
+      "displayName": "File-adapter demo (echo-v1)",
+      "adapters": [{ "kind": "file", "source": "echo-v1.mjs" }],
+      "secretPrefix": "BANTAM_GAME_ECHO",
       "gracePeriodHours": 24,
       "authProvider": "development"
     }

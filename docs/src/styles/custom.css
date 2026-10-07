@@ -1,0 +1,433 @@
+:root {
+  /* Arcade palette */
+  --sl-color-accent-low: #2a0a3e;
+  --sl-color-accent: #ff2d95;
+  --sl-color-accent-high: #ffd6ec;
+  --sl-color-white: #f5f5ff;
+  --sl-color-gray-1: #ffe5f4;
+  --sl-color-gray-2: #c8a8d8;
+  --sl-color-gray-3: #9070a8;
+  --sl-color-gray-4: #5a3878;
+  --sl-color-gray-5: #2a0a3e;
+  --sl-color-gray-6: #160425;
+  --sl-color-black: #0a0214;
+
+  /* Brand extras */
+  --neon-cyan: #00f0ff;
+  --neon-yellow: #ffd60a;
+  --neon-purple: #8b5cf6;
+  --neon-green: #39ff14;
+
+  /* Type */
+  --sl-font: "VT323", "Cascadia Code", "Consolas", ui-monospace, monospace;
+  --sl-font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --pixel-font: "Press Start 2P", "VT323", monospace;
+
+  /* Sizes */
+  --sl-font-size-text-base: 1.125rem;
+  --hero-shadow: 0 0 0.5rem var(--sl-color-accent), 0 0 1.5rem var(--sl-color-accent-low);
+}
+
+html,
+body {
+  background:
+    radial-gradient(circle at 15% 5%, rgba(255, 45, 149, 0.18), transparent 40rem),
+    radial-gradient(circle at 90% 0%, rgba(0, 240, 255, 0.12), transparent 35rem),
+    radial-gradient(circle at 50% 100%, rgba(139, 92, 246, 0.18), transparent 30rem), var(--sl-color-black);
+  background-attachment: fixed;
+  color: var(--sl-color-white);
+}
+
+/* CRT scanline overlay - low opacity for taste */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.03) 0,
+    rgba(255, 255, 255, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 1000;
+}
+
+/* Page chrome */
+.site-title {
+  font-family: var(--pixel-font);
+  letter-spacing: 0.05em;
+  color: var(--neon-yellow) !important;
+  text-shadow:
+    3px 3px 0 var(--sl-color-accent),
+    6px 6px 0 var(--neon-purple);
+}
+.site-title:hover {
+  color: var(--neon-cyan) !important;
+}
+
+/* Hero - splash template */
+.hero {
+  position: relative;
+}
+.hero h1 {
+  font-family: var(--pixel-font);
+  font-size: clamp(2rem, 6vw, 4.5rem);
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  background: linear-gradient(90deg, var(--neon-yellow), var(--neon-cyan), var(--sl-color-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(3px 3px 0 var(--neon-purple));
+  max-width: 18ch;
+}
+.hero .tagline {
+  font-family: var(--sl-font);
+  font-size: 1.5rem;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 0.5rem rgba(0, 240, 255, 0.5);
+  max-width: 36ch;
+}
+.hero .actions a {
+  font-family: var(--pixel-font);
+  font-size: 0.85rem;
+  padding: 0.85rem 1.5rem;
+  border: 3px solid var(--neon-yellow);
+  background: var(--sl-color-black);
+  color: var(--neon-yellow) !important;
+  text-decoration: none !important;
+  box-shadow: 6px 6px 0 var(--sl-color-accent);
+  transition:
+    transform 80ms steps(2),
+    box-shadow 80ms steps(2);
+  image-rendering: pixelated;
+}
+.hero .actions a:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 4px 4px 0 var(--sl-color-accent);
+  color: var(--sl-color-white) !important;
+}
+.hero .actions a[data-variant="primary"] {
+  background: var(--sl-color-accent);
+  color: var(--sl-color-black) !important;
+  border-color: var(--sl-color-accent);
+  box-shadow: 6px 6px 0 var(--neon-yellow);
+}
+.hero .actions a[data-variant="primary"]:hover {
+  background: var(--neon-cyan);
+  border-color: var(--neon-cyan);
+  box-shadow: 4px 4px 0 var(--neon-yellow);
+}
+
+/* Headings */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--pixel-font);
+  letter-spacing: 0.02em;
+}
+.sl-markdown-content h2 {
+  color: var(--neon-yellow);
+  border-bottom: 3px solid var(--sl-color-accent);
+  padding-bottom: 0.4rem;
+  margin-top: 2.5rem;
+}
+.sl-markdown-content h3 {
+  color: var(--neon-cyan);
+  margin-top: 1.5rem;
+}
+
+/* Links */
+.sl-markdown-content a:not(:hover) {
+  color: var(--neon-cyan);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.sl-markdown-content a:hover {
+  color: var(--neon-yellow);
+}
+
+/* Inline code */
+:not(pre) > code {
+  background: var(--sl-color-gray-6);
+  color: var(--neon-cyan);
+  border: 1px solid var(--sl-color-gray-4);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0;
+  font-family: var(--sl-font-mono);
+  font-size: 0.95em;
+}
+
+/* Code blocks */
+.sl-markdown-content pre {
+  border: 3px solid var(--neon-purple);
+  box-shadow: 6px 6px 0 var(--sl-color-accent-low);
+  background: #050010;
+}
+.sl-markdown-content pre code {
+  font-family: var(--sl-font-mono);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* Tables */
+.sl-markdown-content table:not(:where(.not-content *)) {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 3px solid var(--neon-purple);
+}
+.sl-markdown-content table th {
+  background: var(--sl-color-accent-low);
+  color: var(--neon-yellow);
+  font-family: var(--pixel-font);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+.sl-markdown-content table td {
+  border-color: var(--sl-color-gray-4);
+}
+
+/* Cards (Starlight CardGrid) */
+.sl-link-card {
+  background: var(--sl-color-gray-6);
+  border: 3px solid var(--neon-purple);
+  box-shadow: 4px 4px 0 var(--sl-color-accent);
+  transition:
+    transform 80ms steps(2),
+    box-shadow 80ms steps(2);
+}
+.sl-link-card:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--sl-color-accent);
+}
+
+/* Sidebar */
+starlight-menu-button,
+[data-mobile-bar] {
+  border-bottom: 3px solid var(--sl-color-accent);
+}
+
+/* First-game steps */
+.first-game {
+  border: 4px solid var(--neon-yellow);
+  background: linear-gradient(135deg, rgba(255, 45, 149, 0.08), rgba(0, 240, 255, 0.08));
+  padding: 1.5rem;
+  margin: 2rem 0;
+  box-shadow: 8px 8px 0 var(--neon-purple);
+}
+.first-game h2 {
+  border-bottom: none;
+  margin-top: 0;
+}
+.first-game ol {
+  counter-reset: step;
+  padding-left: 0;
+  list-style: none;
+}
+.first-game ol > li {
+  counter-increment: step;
+  position: relative;
+  padding: 0.75rem 0 0.75rem 3.5rem;
+  border-bottom: 1px dashed var(--sl-color-gray-4);
+  font-family: var(--sl-font);
+  font-size: 1.2rem;
+}
+.first-game ol > li:last-child {
+  border-bottom: none;
+}
+.first-game ol > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0.6rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pixel-font);
+  font-size: 1rem;
+  background: var(--sl-color-accent);
+  color: var(--sl-color-black);
+  border: 2px solid var(--neon-yellow);
+  box-shadow: 3px 3px 0 var(--neon-purple);
+}
+
+/* Mascot row */
+.mascots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+.mascot {
+  text-align: center;
+  background: var(--sl-color-gray-6);
+  border: 3px solid var(--neon-purple);
+  padding: 1rem;
+  box-shadow: 4px 4px 0 var(--sl-color-accent);
+}
+.mascot svg {
+  width: 96px;
+  height: 96px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.mascot figcaption {
+  margin-top: 0.5rem;
+  font-family: var(--pixel-font);
+  font-size: 0.65rem;
+  color: var(--neon-yellow);
+}
+
+/* Agent block */
+.agentic {
+  border: 4px dashed var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.05);
+  padding: 1.5rem;
+  margin: 2rem 0;
+}
+.agentic h2 {
+  color: var(--neon-cyan);
+  border-bottom-color: var(--neon-cyan);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    display: none;
+  }
+}
+
+/* Font switcher — defaults to "pixel"; "system" overrides to readable sans */
+html[data-font="system"] {
+  --sl-font: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --pixel-font:
+    "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+html[data-font="system"] .hero h1,
+html[data-font="system"] .site-title,
+html[data-font="system"] h1,
+html[data-font="system"] h2,
+html[data-font="system"] h3,
+html[data-font="system"] h4 {
+  font-family: var(--sl-font);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+html[data-font="system"] .hero h1 {
+  background: linear-gradient(90deg, var(--neon-yellow), var(--neon-cyan), var(--sl-color-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(2px 2px 0 var(--neon-purple));
+  font-size: clamp(2rem, 5vw, 3.5rem);
+}
+html[data-font="system"] .first-game ol > li::before,
+html[data-font="system"] .hero .actions a,
+html[data-font="system"] .sl-markdown-content table th,
+html[data-font="system"] .mascot figcaption {
+  font-family: var(--sl-font);
+  font-weight: 700;
+  letter-spacing: 0;
+  font-size: 0.95rem;
+}
+html[data-font="system"] .hero .actions a {
+  font-size: 0.95rem;
+  padding: 0.7rem 1.25rem;
+}
+html[data-font="system"] .first-game ol > li::before {
+  font-size: 1.1rem;
+  width: 2rem;
+  height: 2rem;
+}
+html[data-font="system"] .mascot figcaption {
+  font-size: 0.8rem;
+}
+
+/* Floating font switcher widget */
+.font-toggle {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 999;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  font-family: var(--pixel-font, var(--sl-font));
+  font-size: 0.75rem;
+  background: var(--sl-color-gray-6);
+  color: var(--neon-yellow);
+  border: 3px solid var(--neon-purple);
+  box-shadow: 4px 4px 0 var(--sl-color-accent);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+  transition:
+    transform 80ms steps(2),
+    box-shadow 80ms steps(2);
+}
+.font-toggle:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--sl-color-accent);
+}
+.font-toggle[data-active="system"] {
+  color: var(--neon-cyan);
+  border-color: var(--neon-cyan);
+}
+.font-toggle .glyph {
+  font-family: var(--pixel-font, monospace);
+  font-size: 1rem;
+}
+html[data-font="system"] .font-toggle {
+  font-family: var(--sl-font);
+  font-size: 0.85rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Grid + grid-card (replaces Starlight CardGrid for plain-markdown pages) */
+.hero-band {
+  margin-top: 1rem;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+}
+.grid-card {
+  background: var(--sl-color-gray-6);
+  border: 3px solid var(--neon-purple);
+  padding: 1rem 1.25rem;
+  box-shadow: 4px 4px 0 var(--sl-color-accent);
+  transition:
+    transform 80ms steps(2),
+    box-shadow 80ms steps(2);
+}
+.grid-card:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--sl-color-accent);
+}
+.grid-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--neon-yellow);
+}
+.grid-card p {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+html[data-font="system"] .grid-card h3 {
+  font-size: 0.95rem;
+}
+html[data-font="system"] .grid-card p {
+  font-size: 0.95rem;
+}

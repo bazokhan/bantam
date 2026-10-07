@@ -3,7 +3,16 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "coverage", "openapi", ".npm-cache*", "packages/sdk/dist", "eslint.config.js"],
+    ignores: [
+      "dist",
+      "coverage",
+      "openapi",
+      ".npm-cache*",
+      "packages/sdk/dist",
+      "eslint.config.js",
+      "test/fixtures/adapters/**",
+      "docs/**",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,

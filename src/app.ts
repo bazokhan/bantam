@@ -6,14 +6,14 @@ import swagger from "@fastify/swagger";
 import { Type, type Static } from "@sinclair/typebox";
 import Fastify, { LogController, type FastifyInstance } from "fastify";
 import { Registry, collectDefaultMetrics, Counter, Histogram } from "prom-client";
-import { adapterById, allAdapters } from "./adapters/registry.js";
+import { loadAdaptersForGame, listLoadedAdapters } from "./adapters/registry.js";
 import { providerFor } from "./auth/provider.js";
 import { issueSession, revokeSession, rotateSession, verifyAccess } from "./auth/sessions.js";
 import type { LoadedConfig } from "./config.js";
 import { GameDatabase } from "./db/game-database.js";
 import { BantamError } from "./errors.js";
 import { decodeCursor, encodeCursor } from "./services/cursor.js";
-import type { BoardDefinition, RuntimeGame } from "./types.js";
+import type { BoardDefinition, GameAdapterV1, RuntimeGame } from "./types.js";
 import { canonicalJson, derivePlayerId, hmac, sha256 } from "./util/crypto.js";
 import { sanitizeDisplayName } from "./util/display-name.js";
 
@@ -66,7 +66,8 @@ const AroundQuery = Type.Object(
   { additionalProperties: false },
 );
 
-type Runtime = { game: RuntimeGame; db: GameDatabase };
+type Runtime = { game: RuntimeGame; db: GameDatabase; adapters: ReadonlyMap<string, GameAdapterV1> };
+export type { Runtime };
 
 export async function buildApp(
   config: LoadedConfig,
@@ -88,6 +89,7 @@ export async function buildApp(
     bodyLimit: 65_536,
     ajv: { customOptions: { allErrors: false, removeAdditional: false } },
     requestIdHeader: false,
+    routerOptions: { ignoreTrailingSlash: true },
   });
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, {
@@ -108,10 +110,11 @@ export async function buildApp(
   const migrationsDirectory = options.migrationsDirectory ?? join(process.cwd(), "migrations");
   const runtimes = new Map<string, Runtime>();
   for (const game of config.games.values()) {
-    for (const id of game.adapters) adapterById(id);
+    const adapters = await loadAdaptersForGame(game.id, game.adapters);
     runtimes.set(game.id, {
       game,
       db: new GameDatabase(join(config.dataDir, "games", game.id, "bantam.sqlite"), migrationsDirectory),
+      adapters,
     });
   }
   app.addHook("onClose", async () => {
@@ -165,8 +168,8 @@ export async function buildApp(
     return verifyAccess(game, header.slice(7));
   }
   function boardFor(run: Runtime, boardId: string): BoardDefinition {
-    for (const adapterId of run.game.adapters) {
-      const board = adapterById(adapterId).boards.find((item) => item.id === boardId);
+    for (const adapter of run.adapters.values()) {
+      const board = adapter.boards.find((item) => item.id === boardId);
       if (board) return board;
     }
     throw new BantamError("board-not-found", "Leaderboard not found", 404);
@@ -197,7 +200,7 @@ export async function buildApp(
     version: "0.1.0",
     commit: process.env.BANTAM_GIT_SHA ?? "local",
     builtAt: process.env.BANTAM_BUILT_AT ?? "unknown",
-    adapters: allAdapters().map(({ id, version }) => ({ id, version })),
+    adapters: listLoadedAdapters().map(({ id, version }) => ({ id, version })),
   }));
   app.get("/openapi.json", { schema: { hide: true } }, async () => app.swagger());
   app.get("/metrics", { schema: { hide: true } }, async (request, reply) => {
@@ -261,11 +264,10 @@ export async function buildApp(
       const run = runtime(request.params.gameId);
       const player = await playerId(request.headers.authorization, run.game);
       run.db.takeRate(player, "submission", 20, Date.now());
-      if (!run.game.adapters.includes(request.params.adapterId))
-        throw new BantamError("adapter-not-found", "Adapter not found", 404);
+      const adapter = run.adapters.get(request.params.adapterId);
+      if (!adapter) throw new BantamError("adapter-not-found", "Adapter not found", 404);
       if (typeof request.body.payload.runId === "string" && request.body.payload.runId !== request.body.runId)
         throw new BantamError("run-id-mismatch", "Run id mismatch");
-      const adapter = adapterById(request.params.adapterId);
       const derived = adapter.validateAndDerive(request.body.payload, {
         nowMs: Date.now(),
         gracePeriodHours: run.game.gracePeriodHours,
@@ -345,6 +347,12 @@ export async function buildApp(
       return reply.code(204).send();
     },
   );
+
+  // Admin UI: token-gated, read-only. Skipped if BANTAM_ADMIN_TOKEN is unset.
+  if (config.adminToken) {
+    const { registerAdmin } = await import("./admin/routes.js");
+    await registerAdmin(app, config.adminToken, runtimes);
+  }
 
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     const known = error instanceof BantamError;
