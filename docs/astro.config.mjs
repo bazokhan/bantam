@@ -11,7 +11,11 @@ export default defineConfig({
       customCss: ["./src/styles/custom.css"],
       social: [
         { icon: "external", label: "Gamercury Studio", href: "https://gamercury.trugraph.io" },
-        { icon: "seti:docker", label: "Docker Hub: bazokhan/bantam", href: "https://hub.docker.com/r/bazokhan/bantam" },
+        {
+          icon: "seti:docker",
+          label: "Docker Hub: bazokhan/bantam",
+          href: "https://hub.docker.com/r/bazokhan/bantam",
+        },
       ],
       head: [
         {
