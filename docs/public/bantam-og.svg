@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" shape-rendering="crispEdges">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0214"/>
+      <stop offset="1" stop-color="#150832"/>
+    </linearGradient>
+    <pattern id="grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+      <rect width="40" height="40" fill="none"/>
+      <rect x="0" y="0" width="1" height="1" fill="#1a0a3a" opacity="0.4"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+
+  <!-- Pixel alien mascot, scaled up -->
+  <g transform="translate(120, 150) scale(12)" shape-rendering="crispEdges">
+    <g fill="#ff2d95">
+      <rect x="3" y="2" width="1" height="1"/>
+      <rect x="4" y="1" width="1" height="1"/>
+      <rect x="11" y="1" width="1" height="1"/>
+      <rect x="12" y="2" width="1" height="1"/>
+      <rect x="2" y="3" width="1" height="1"/>
+      <rect x="13" y="3" width="1" height="1"/>
+    </g>
+    <g fill="#00f0ff">
+      <rect x="3" y="3" width="10" height="1"/>
+      <rect x="2" y="4" width="12" height="1"/>
+      <rect x="2" y="5" width="12" height="1"/>
+      <rect x="2" y="6" width="12" height="1"/>
+      <rect x="2" y="7" width="12" height="1"/>
+    </g>
+    <g fill="#ffd60a">
+      <rect x="5" y="5" width="2" height="2"/>
+      <rect x="9" y="5" width="2" height="2"/>
+    </g>
+    <g fill="#0a0214">
+      <rect x="5" y="5" width="1" height="2"/>
+      <rect x="6" y="5" width="1" height="1"/>
+      <rect x="9" y="5" width="1" height="2"/>
+      <rect x="10" y="5" width="1" height="1"/>
+    </g>
+    <g fill="#ff2d95">
+      <rect x="3" y="8" width="1" height="1"/>
+      <rect x="5" y="8" width="1" height="1"/>
+      <rect x="7" y="8" width="1" height="1"/>
+      <rect x="8" y="8" width="1" height="1"/>
+      <rect x="10" y="8" width="1" height="1"/>
+      <rect x="12" y="8" width="1" height="1"/>
+      <rect x="2" y="9" width="1" height="1"/>
+      <rect x="4" y="9" width="1" height="1"/>
+      <rect x="5" y="9" width="1" height="1"/>
+      <rect x="6" y="9" width="1" height="1"/>
+      <rect x="9" y="9" width="1" height="1"/>
+      <rect x="10" y="9" width="1" height="1"/>
+      <rect x="11" y="9" width="1" height="1"/>
+      <rect x="13" y="9" width="1" height="1"/>
+      <rect x="2" y="10" width="1" height="1"/>
+      <rect x="13" y="10" width="1" height="1"/>
+      <rect x="2" y="11" width="1" height="1"/>
+      <rect x="4" y="11" width="1" height="1"/>
+      <rect x="5" y="11" width="1" height="1"/>
+      <rect x="10" y="11" width="1" height="1"/>
+      <rect x="11" y="11" width="1" height="1"/>
+      <rect x="13" y="11" width="1" height="1"/>
+      <rect x="3" y="12" width="1" height="1"/>
+      <rect x="12" y="12" width="1" height="1"/>
+      <rect x="4" y="13" width="1" height="1"/>
+      <rect x="11" y="13" width="1" height="1"/>
+    </g>
+  </g>
+
+  <!-- Title block -->
+  <g transform="translate(420, 200)">
+    <text x="0" y="0" font-family="'Press Start 2P', 'VT323', monospace" font-size="86" fill="#00f0ff" letter-spacing="6" text-anchor="start">BANTAM</text>
+    <rect x="0" y="40" width="200" height="6" fill="#ff2d95"/>
+    <text x="0" y="120" font-family="'JetBrains Mono', monospace" font-size="28" fill="#a8b3cf" font-weight="500">Plug a leaderboard into any game.</text>
+    <text x="0" y="160" font-family="'JetBrains Mono', monospace" font-size="28" fill="#a8b3cf" font-weight="500">Done.</text>
+    <text x="0" y="240" font-family="'JetBrains Mono', monospace" font-size="20" fill="#ffd60a">docker run bazokhan/bantam:latest</text>
+    <text x="0" y="290" font-family="'JetBrains Mono', monospace" font-size="18" fill="#7a8499">game-agnostic · server-validated · Litestream-backed</text>
+  </g>
+
+  <!-- Footer chip -->
+  <g transform="translate(60, 560)">
+    <rect width="220" height="40" fill="#150832" stroke="#00f0ff" stroke-width="2"/>
+    <text x="110" y="26" font-family="'Press Start 2P', monospace" font-size="14" fill="#00f0ff" text-anchor="middle">GAMERCURY</text>
+  </g>
+  <text x="600" y="586" font-family="'JetBrains Mono', monospace" font-size="18" fill="#7a8499" text-anchor="middle">bantam.trugraph.io · github.com/bazokhan/bantam</text>
+</svg>

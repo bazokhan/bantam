@@ -1,14 +1,42 @@
 import { readFileSync } from "node:fs";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { BantamError } from "./errors.js";
-import type { GameManifestEntry, RuntimeGame } from "./types.js";
+import type { GameManifestEntry, RuntimeGame, AdapterSpec } from "./types.js";
+
+const BoardDefSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 1, maxLength: 80 }),
+    direction: Type.Union([Type.Literal("higher"), Type.Literal("lower")]),
+    period: Type.Union([Type.Literal("all_time"), Type.Literal("daily")]),
+    completedOnly: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+// Adapter spec models. Type.Union of Object Members can produce surprising
+// diagnostics depending on the TypeBox runtime path; per-member schemas
+// validated manually by `validateAdapterSpecs` below.
+const FileAdapterSpecSchema = Type.Object(
+  {
+    kind: Type.Literal("file"),
+    source: Type.String({ minLength: 1, maxLength: 256 }),
+  },
+  { additionalProperties: false },
+);
+const GenericAdapterSpecSchema = Type.Object(
+  {
+    kind: Type.Literal("generic"),
+    boards: Type.Array(BoardDefSchema, { minItems: 1, maxItems: 16 }),
+  },
+  { additionalProperties: false },
+);
 
 const GameSchema = Type.Object(
   {
     id: Type.String({ pattern: "^[a-z0-9][a-z0-9-]{1,47}$" }),
     displayName: Type.String({ minLength: 1, maxLength: 80 }),
-    adapters: Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { minItems: 1, maxItems: 16 }),
+    adapters: Type.Array(Type.Unknown(), { minItems: 1, maxItems: 16 }),
     secretPrefix: Type.String({ pattern: "^[A-Z][A-Z0-9_]{1,47}$" }),
     gracePeriodHours: Type.Integer({ minimum: 0, maximum: 168 }),
     authProvider: Type.Union([Type.Literal("pgs-v2"), Type.Literal("development")]),
@@ -30,7 +58,40 @@ export type LoadedConfig = {
   games: Map<string, RuntimeGame>;
   allowedOrigins: string[];
   metricsToken?: string;
+  adminToken?: string;
 };
+
+function validateAdapterSpec(value: unknown, path: string): AdapterSpec {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new BantamError("invalid-config", `${path}: Expected object`, 500);
+  const v = value as Record<string, unknown>;
+  const kind = v.kind;
+  if (kind === "file") {
+    if (!Value.Check(FileAdapterSpecSchema, v)) {
+      const errs = [...Value.Errors(FileAdapterSpecSchema, v)]
+        .map((item) => `${item.path}: ${item.message}`)
+        .join("; ");
+      throw new BantamError("invalid-config", `${path}: ${errs}`, 500);
+    }
+    const spec: Static<typeof FileAdapterSpecSchema> = v;
+    return { kind: "file", source: spec.source };
+  }
+  if (kind === "generic") {
+    if (!Value.Check(GenericAdapterSpecSchema, v)) {
+      const errs = [...Value.Errors(GenericAdapterSpecSchema, v)]
+        .map((item) => `${item.path}: ${item.message}`)
+        .join("; ");
+      throw new BantamError("invalid-config", `${path}: ${errs}`, 500);
+    }
+    const spec: Static<typeof GenericAdapterSpecSchema> = v;
+    return { kind: "generic", boards: spec.boards };
+  }
+  throw new BantamError(
+    "invalid-config",
+    `${path}: kind must be "file" or "generic" (got ${JSON.stringify(kind)})`,
+    500,
+  );
+}
 
 export function loadConfig(
   path = process.env.BANTAM_CONFIG_FILE ?? "/etc/bantam/games.json",
@@ -48,19 +109,28 @@ export function loadConfig(
       .join("; ");
     throw new BantamError("invalid-config", `Invalid game manifest: ${details}`, 500);
   }
-  const manifest = raw as { environment: LoadedConfig["environment"]; games: GameManifestEntry[] };
+  const manifest = raw as { environment: LoadedConfig["environment"]; games: unknown[] };
   const only = env.BANTAM_ONLY_GAME;
-  const selected = only ? manifest.games.filter((game) => game.id === only) : manifest.games;
-  if (only && selected.length !== 1)
+  const candidateGames = manifest.games.filter(
+    (game): game is Record<string, unknown> =>
+      typeof game === "object" && game !== null && !Array.isArray(game),
+  );
+  const allSelected = (
+    only ? candidateGames.filter((game) => game["id"] === only) : candidateGames
+  ) as GameManifestEntry[];
+  if (only && allSelected.length !== 1)
     throw new BantamError("invalid-config", `Unknown BANTAM_ONLY_GAME: ${only}`, 500);
-  if (new Set(selected.map((game) => game.id)).size !== selected.length) {
+  if (new Set(allSelected.map((game) => game.id)).size !== allSelected.length) {
     throw new BantamError("invalid-config", "Duplicate game id", 500);
   }
   const games = new Map<string, RuntimeGame>();
-  for (const game of selected) {
+  for (const [i, game] of allSelected.entries()) {
     if (manifest.environment === "production" && game.authProvider === "development") {
       throw new BantamError("invalid-config", `Development auth forbidden for ${game.id}`, 500);
     }
+    const adapters: AdapterSpec[] = (game.adapters as unknown[]).map((value, idx) =>
+      validateAdapterSpec(value, `/games/${i}/adapters/${idx}`),
+    );
     const readSecret = (suffix: string): string => {
       const key = `${game.secretPrefix}_${suffix}`;
       const value = env[key];
@@ -70,6 +140,7 @@ export function loadConfig(
     };
     const runtime: RuntimeGame = {
       ...game,
+      adapters,
       identitySalt: readSecret("IDENTITY_SALT"),
       sessionSecret: readSecret("SESSION_SECRET"),
       cursorSecret: readSecret("CURSOR_SECRET"),
@@ -89,5 +160,6 @@ export function loadConfig(
       .map((value) => value.trim())
       .filter(Boolean),
     ...(env.BANTAM_METRICS_TOKEN ? { metricsToken: env.BANTAM_METRICS_TOKEN } : {}),
+    ...(env.BANTAM_ADMIN_TOKEN ? { adminToken: env.BANTAM_ADMIN_TOKEN } : {}),
   };
 }

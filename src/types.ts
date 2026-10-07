@@ -24,10 +24,17 @@ export interface GameAdapterV1 {
   validateAndDerive(payload: unknown, context: AdapterContext): AdapterResult;
 }
 
+// Discriminated union for the game manifest's `adapters` array.
+// `file` adapters come from the preloaded directory cache (preloadAdapterDirectory).
+// `generic` adapters are synthesized at boot from a JSON board spec.
+export type FileAdapterSpec = { kind: "file"; source: string };
+export type GenericAdapterSpec = { kind: "generic"; boards: BoardDefinition[] };
+export type AdapterSpec = FileAdapterSpec | GenericAdapterSpec;
+
 export type GameManifestEntry = {
   id: string;
   displayName: string;
-  adapters: string[];
+  adapters: AdapterSpec[];
   secretPrefix: string;
   gracePeriodHours: number;
   authProvider: "pgs-v2" | "development";

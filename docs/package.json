@@ -1,0 +1,27 @@
+{
+  "name": "@gamercury/bantam-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "npm run reference:sync && astro check && astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "reference:sync": "node scripts/sync-reference.mjs",
+    "reference:check": "node scripts/sync-reference.mjs --check"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.42.3",
+    "@gamercury/bantam": "file:..",
+    "astro": "7.3.4",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "typescript": "5.9.3"
+  }
+}

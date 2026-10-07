@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { buildApp } from "../src/app.js";
-import { ColorQuestDailyV1Adapter } from "../src/adapters/example-title-daily-v1.js";
-import { buildDailyDefinition, scoreCompetitiveGate } from "../src/adapters/example-title-core.js";
+import type { AdapterSpec, RuntimeGame } from "../src/types.js";
 import { issueSession, rotateSession, verifyAccess } from "../src/auth/sessions.js";
 import type { LoadedConfig } from "../src/config.js";
 import { GameDatabase } from "../src/db/game-database.js";
@@ -13,6 +12,7 @@ import { decodeCursor, encodeCursor } from "../src/services/cursor.js";
 import { derivePlayerId } from "../src/util/crypto.js";
 import { sanitizeDisplayName } from "../src/util/display-name.js";
 import { BantamError } from "../src/errors.js";
+import { GenericAdapter } from "../src/adapters/built-in/generic.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -32,14 +32,23 @@ function errorCode(action: () => unknown): string {
     return error instanceof BantamError ? error.code : "unknown";
   }
 }
-function game(id = "example-title") {
+function genericAdapter(): AdapterSpec {
+  return {
+    kind: "generic",
+    boards: [
+      { id: "high_score", direction: "higher", period: "all_time" },
+      { id: "fastest_finish", direction: "lower", period: "all_time", completedOnly: true },
+    ],
+  };
+}
+function game(id = "demo"): RuntimeGame {
   return {
     id,
     displayName: id,
-    adapters: ["example-title-daily-v1"],
+    adapters: [genericAdapter()],
     secretPrefix: "TEST",
-    gracePeriodHours: 48,
-    authProvider: "development" as const,
+    gracePeriodHours: 24,
+    authProvider: "development",
     identitySalt: secret + id,
     sessionSecret: secret + id,
     cursorSecret: secret + id,
@@ -54,53 +63,12 @@ function config(dataDir = temp(), games = [game()]): LoadedConfig {
   };
 }
 
-export function validDaily(date = "2026-09-23") {
-  const route = buildDailyDefinition(date);
-  const eventLedger: Record<string, unknown>[] = [];
-  let score = 0,
-    combo = 0,
-    streak = 0,
-    activeMs = 0;
-  route.chunks.forEach((chunk, index) => {
-    activeMs += 5_000;
-    const gate = scoreCompetitiveGate("regular", streak, combo, 1, 5_000);
-    combo = gate.nextCombo;
-    streak = gate.nextPerfectStreak;
-    score += gate.totalPoints;
-    eventLedger.push({
-      type: "gate",
-      gate: index + 1,
-      obstacleId: chunk.obstacle.id,
-      result: "regular",
-      alignment: 0.5,
-      gateActiveMs: 5_000,
-      activeMs,
-      points: gate.totalPoints,
-      pace: gate.pacePoints,
-    });
-  });
-  eventLedger.push({ type: "end", activeMs, reason: "daily_complete" });
-  return {
-    runId: "run-valid-1234",
-    utcDate: date,
-    rulesVersion: "daily-v1",
-    seed: route.seed,
-    score,
-    distanceMeters: 0,
-    activeTimeMs: activeMs,
-    completed: true,
-    gatesCleared: 20,
-    eventLedger,
-    createdAtMs: Date.parse(`${date}T12:00:00Z`),
-  };
-}
-
 describe("security primitives", () => {
   it("derives per-game pseudonyms and sanitizes names", () => {
     expect(derivePlayerId("pgs-v2", "raw-player", "salt-a")).not.toBe(
       derivePlayerId("pgs-v2", "raw-player", "salt-b"),
     );
-    expect(sanitizeDisplayName(" \u202e  Alice\u0000   Player  ")).toBe("Alice Player");
+    expect(sanitizeDisplayName(" ‮  Alice\u0000   Player  ")).toBe("Alice Player");
     expect([...sanitizeDisplayName("😀".repeat(30))]).toHaveLength(24);
   });
   it("signs and rejects altered cursors", () => {
@@ -110,95 +78,38 @@ describe("security primitives", () => {
   });
 });
 
-describe("Example daily-v1", () => {
-  const adapter = new ColorQuestDailyV1Adapter();
-  const nowMs = Date.parse("2026-09-24T00:00:00Z");
-  it("accepts the committed complete and partial golden submissions", () => {
-    const golden = JSON.parse(
-      readFileSync(join(process.cwd(), "fixtures", "example-title", "daily-v1.golden.json"), "utf8"),
-    ) as { validComplete: unknown; validPartial: unknown; rejectionClasses: string[] };
-    expect(
-      adapter.validateAndDerive(golden.validComplete, { nowMs, gracePeriodHours: 48 }).values,
-    ).toHaveLength(2);
-    expect(
-      adapter.validateAndDerive(golden.validPartial, { nowMs, gracePeriodHours: 48 }).values,
-    ).toHaveLength(1);
-    expect(golden.rejectionClasses).toHaveLength(18);
+describe("generic adapter", () => {
+  const adapter = new GenericAdapter([{ id: "score", direction: "higher", period: "all_time" }]);
+  it("derives a value from a payload key matching its board id", () => {
+    const result = adapter.validateAndDerive({ score: 42 }, { nowMs: 0, gracePeriodHours: 0 });
+    expect(result.values).toEqual([{ boardId: "score", periodKey: "all_time", value: 42 }]);
   });
-  it("regenerates a route and derives both boards", () => {
-    const result = adapter.validateAndDerive(validDaily(), { nowMs, gracePeriodHours: 48 });
-    expect(result.values.map((value) => value.boardId)).toEqual(["daily_score", "daily_fastest_finish"]);
-  });
-  it.each([
-    [
-      "seed",
-      (value: ReturnType<typeof validDaily>) => {
-        value.seed = "wrong";
-      },
-      "invalid-route",
-    ],
-    [
-      "score",
-      (value: ReturnType<typeof validDaily>) => {
-        value.score += 1;
-      },
-      "score-mismatch",
-    ],
-    [
-      "time",
-      (value: ReturnType<typeof validDaily>) => {
-        value.activeTimeMs = 1;
-      },
-      "time-mismatch",
-    ],
-    [
-      "event after end",
-      (value: ReturnType<typeof validDaily>) => {
-        value.eventLedger.push({ type: "end", activeMs: value.activeTimeMs });
-      },
-      "event-after-end",
-    ],
-    [
-      "revive",
-      (value: ReturnType<typeof validDaily>) => {
-        value.eventLedger.unshift({ type: "rewarded_revive", activeMs: 0 });
-      },
-      "daily-revive-forbidden",
-    ],
-  ])("rejects %s tampering", (_name, mutate, code) => {
-    const value = validDaily();
-    mutate(value);
-    expect(errorCode(() => adapter.validateAndDerive(value, { nowMs, gracePeriodHours: 48 }))).toBe(code);
-  });
-  it("rejects an expired offline run", () =>
-    expect(() =>
-      adapter.validateAndDerive(validDaily(), {
-        nowMs: Date.parse("2026-09-26T00:00:01Z"),
-        gracePeriodHours: 48,
-      }),
-    ).toThrow("expired"));
-  it("rejects duplicate and impossible pickups", () => {
-    const value = validDaily();
-    const route = buildDailyDefinition(value.utcDate);
-    const index = route.chunks.findIndex((chunk) => chunk.reward !== "none");
-    const kind = route.chunks[index]!.reward;
-    value.eventLedger.unshift(
-      {
-        type: "pickup",
-        kind,
-        gate: index,
-        activeMs: 0,
-        points: kind === "star" ? 5 : kind === "gem" ? 10 : 0,
-      },
-      {
-        type: "pickup",
-        kind,
-        gate: index,
-        activeMs: 0,
-        points: kind === "star" ? 5 : kind === "gem" ? 10 : 0,
-      },
+  it("derives a daily periodKey as today UTC", () => {
+    const daily = new GenericAdapter([{ id: "today", direction: "higher", period: "daily" }]);
+    const result = daily.validateAndDerive(
+      { today: 7 },
+      { nowMs: Date.UTC(2026, 0, 5), gracePeriodHours: 0 },
     );
-    expect(() => adapter.validateAndDerive(value, { nowMs, gracePeriodHours: 48 })).toThrow("Duplicate");
+    expect(result.values[0]?.periodKey).toBe("2026-01-05");
+  });
+  it("rejects unknown payload keys", () => {
+    expect(() => adapter.validateAndDerive({ score: 1, junk: 2 }, { nowMs: 0, gracePeriodHours: 0 })).toThrow(
+      BantamError,
+    );
+    expect(
+      errorCode(() => adapter.validateAndDerive({ score: 1, junk: 2 }, { nowMs: 0, gracePeriodHours: 0 })),
+    ).toBe("unknown-field");
+  });
+  it("rejects non-integer values", () => {
+    expect(() => adapter.validateAndDerive({ score: 1.5 }, { nowMs: 0, gracePeriodHours: 0 })).toThrow(
+      BantamError,
+    );
+    expect(() => adapter.validateAndDerive({ score: Number.NaN }, { nowMs: 0, gracePeriodHours: 0 })).toThrow(
+      BantamError,
+    );
+    expect(() => adapter.validateAndDerive({ score: "x" }, { nowMs: 0, gracePeriodHours: 0 })).toThrow(
+      BantamError,
+    );
   });
 });
 
@@ -309,9 +220,7 @@ describe("SQLite durability and leaderboard semantics", () => {
 
 describe("real HTTP API", () => {
   it("isolates games, accepts authoritative runs, paginates, and deletes", async () => {
-    const app = await buildApp(config(temp(), [game("example-title"), game("example-title-two")]), {
-      logger: false,
-    });
+    const app = await buildApp(config(temp(), [game("demo-a"), game("demo-b")]), { logger: false });
     const login = async (id: string, code: string) =>
       (
         await app.inject({
@@ -320,40 +229,40 @@ describe("real HTTP API", () => {
           payload: { authorizationCode: code },
         })
       ).json<{ accessToken: string }>();
-    const a = await login("example-title", "player-a");
-    const b = await login("example-title-two", "player-a");
+    const a = await login("demo-a", "player-a");
+    const b = await login("demo-b", "player-a");
     const crossGame = await app.inject({
       method: "GET",
-      url: "/v1/games/example-title/leaderboards/daily_score?period=2026-09-23",
+      url: "/v1/games/demo-a/leaderboards/high_score",
       headers: { authorization: `Bearer ${b.accessToken}` },
     });
     expect(crossGame.statusCode, crossGame.body).toBe(401);
-    const payload = validDaily();
+    const submitPayload = { runId: "run-http-aaaaaa", payload: { high_score: 99 } };
     const submitted = await app.inject({
       method: "POST",
-      url: "/v1/games/example-title/runs/example-title-daily-v1",
+      url: `/v1/games/demo-a/runs/${adapterIdFor(config())}`,
       headers: { authorization: `Bearer ${a.accessToken}` },
-      payload: { runId: payload.runId, payload },
+      payload: submitPayload,
     });
     expect(submitted.statusCode, submitted.body).toBe(200);
     const replay = await app.inject({
       method: "POST",
-      url: "/v1/games/example-title/runs/example-title-daily-v1",
+      url: `/v1/games/demo-a/runs/${adapterIdFor(config())}`,
       headers: { authorization: `Bearer ${a.accessToken}` },
-      payload: { runId: payload.runId, payload },
+      payload: submitPayload,
     });
     expect(replay.json<{ replayed: boolean }>().replayed).toBe(true);
     const board = await app.inject({
       method: "GET",
-      url: "/v1/games/example-title/leaderboards/daily_score?period=2026-09-23&limit=1",
+      url: "/v1/games/demo-a/leaderboards/high_score?limit=1",
       headers: { authorization: `Bearer ${a.accessToken}` },
     });
-    expect(board.json<{ entries: unknown[] }>().entries).toHaveLength(1);
+    expect(board.json<{ entries: { value: number }[] }>().entries[0]?.value).toBe(99);
     expect(
       (
         await app.inject({
           method: "DELETE",
-          url: "/v1/games/example-title/player",
+          url: "/v1/games/demo-a/player",
           headers: { authorization: `Bearer ${a.accessToken}` },
         })
       ).statusCode,
@@ -364,22 +273,34 @@ describe("real HTTP API", () => {
     const app = await buildApp(config(), { logger: false });
     const login = await app.inject({
       method: "POST",
-      url: "/v1/games/example-title/auth/exchange",
+      url: "/v1/games/demo/auth/exchange",
       payload: { authorizationCode: "concurrent-player" },
     });
     const token = login.json<{ accessToken: string }>().accessToken;
-    const values = Array.from({ length: 10 }, (_, index) => {
-      const payload = validDaily();
-      payload.runId = `run-concurrent-${index}`;
-      return app.inject({
+    const values = Array.from({ length: 10 }, (_, index) =>
+      app.inject({
         method: "POST",
-        url: "/v1/games/example-title/runs/example-title-daily-v1",
+        url: `/v1/games/demo/runs/${adapterIdFor(config())}`,
         headers: { authorization: `Bearer ${token}` },
-        payload: { runId: payload.runId, payload },
-      });
-    });
+        payload: { runId: `run-concurrent-${index}`, payload: { high_score: index + 1 } },
+      }),
+    );
     const responses = await Promise.all(values);
     expect(responses.map((response) => response.statusCode)).toEqual(Array(10).fill(200));
     await app.close();
   }, 30_000);
 });
+
+// The synthesized adapter id is deterministic: "generic:<sorted board ids>".
+// Resolving once via the loader keeps this test agnostic to board additions.
+function adapterIdFor(cfg: LoadedConfig): string {
+  const game = cfg.games.values().next().value;
+  if (!game) throw new Error("test config has no games");
+  const spec = game.adapters[0];
+  if (!spec || spec.kind !== "generic") throw new Error("test config expects a generic adapter");
+  const ids = spec.boards
+    .map((b) => b.id)
+    .sort()
+    .join(",");
+  return `generic:${ids}`;
+}

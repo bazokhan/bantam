@@ -2,3 +2,6 @@ openapi/
 dist/
 coverage/
 packages/sdk/dist/
+docs/.astro/
+docs/dist/
+docs/public/reference/

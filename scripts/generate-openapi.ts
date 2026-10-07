@@ -3,22 +3,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp } from "../src/app.js";
 import type { LoadedConfig } from "../src/config.js";
+import { preloadAdapterDirectory } from "../src/adapters/registry.js";
 
 const dir = mkdtempSync(join(tmpdir(), "bantam-openapi-"));
 const secret = "openapi-generation-secret-at-least-32";
+// Generic-game manifest: a built-in synthesized adapter with one all_time board.
+// The framework ships game-agnostic; this config exists only so buildApp can boot.
 const config: LoadedConfig = {
   environment: "test",
   dataDir: dir,
   allowedOrigins: [],
   games: new Map([
     [
-      "example-title",
+      "demo",
       {
-        id: "example-title",
-        displayName: "Example",
-        adapters: ["example-title-daily-v1"],
+        id: "demo",
+        displayName: "Demo",
+        adapters: [
+          { kind: "generic", boards: [{ id: "high_score", direction: "higher", period: "all_time" }] },
+        ],
         secretPrefix: "TEST",
-        gracePeriodHours: 48,
+        gracePeriodHours: 24,
         authProvider: "development",
         identitySalt: secret,
         sessionSecret: secret,
@@ -27,6 +32,7 @@ const config: LoadedConfig = {
     ],
   ]),
 };
+await preloadAdapterDirectory();
 const app = await buildApp(config, { logger: false });
 await app.ready();
 const output = `${JSON.stringify(app.swagger(), null, 2)}\n`;

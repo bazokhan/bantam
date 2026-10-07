@@ -1,0 +1,449 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Bantam Game Services",
+    "description": "Small footprint. Authoritative results.",
+    "version": "0.1.0"
+  },
+  "components": {
+    "schemas": {}
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/auth/exchange": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "authorizationCode": {
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "authorizationCode"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "minLength": 16,
+                    "maxLength": 256,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "minLength": 16,
+                    "maxLength": 256,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/runs/{adapterId}": {
+      "post": {
+        "tags": [
+          "leaderboards"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "runId": {
+                    "pattern": "^[A-Za-z0-9._~-]{8,128}$",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "runId",
+                  "payload"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 80,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "adapterId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/leaderboards/{boardId}": {
+      "get": {
+        "tags": [
+          "leaderboards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "maxLength": 10,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "period",
+            "required": false
+          },
+          {
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 80,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "boardId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/leaderboards/{boardId}/me": {
+      "get": {
+        "tags": [
+          "leaderboards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "maxLength": 10,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "period",
+            "required": false
+          },
+          {
+            "schema": {
+              "minimum": 1,
+              "maximum": 10,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "radius",
+            "required": false
+          },
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 80,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "boardId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/leaderboards/{boardId}/around-me": {
+      "get": {
+        "tags": [
+          "leaderboards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "maxLength": 10,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "period",
+            "required": false
+          },
+          {
+            "schema": {
+              "minimum": 1,
+              "maximum": 10,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "radius",
+            "required": false
+          },
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 80,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "boardId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/player": {
+      "delete": {
+        "tags": [
+          "players"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system"
+    },
+    {
+      "name": "auth"
+    },
+    {
+      "name": "leaderboards"
+    },
+    {
+      "name": "players"
+    }
+  ]
+}

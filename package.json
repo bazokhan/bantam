@@ -20,15 +20,18 @@
     "test": "vitest run",
     "test:unit": "vitest run test/bantam.test.ts",
     "test:integration": "vitest run test/bantam.test.ts",
-    "test:cross-repo": "tsx scripts/check-example-title-contract.ts",
-    "fixtures:generate": "tsx scripts/generate-example-title-fixtures.ts",
-    "fixtures:check": "tsx scripts/generate-example-title-fixtures.ts --check",
     "smoke:http": "tsx scripts/http-smoke.ts",
+    "adapters:smoke": "tsx scripts/adapters-smoke.ts",
     "openapi:generate": "tsx scripts/generate-openapi.ts",
     "openapi:check": "tsx scripts/generate-openapi.ts --check",
     "litestream:config": "tsx scripts/generate-litestream-config.ts",
     "ops": "tsx src/ops/cli.ts",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run fixtures:check && npm test && npm run build && npm run openapi:check"
+    "docs:install": "npm --prefix docs install",
+    "docs:dev": "npm --prefix docs run dev",
+    "docs:build": "npm --prefix docs run build",
+    "docs:preview": "npm --prefix docs run preview",
+    "docs:check": "npm --prefix docs run build",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run openapi:check"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",

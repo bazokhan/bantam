@@ -9,6 +9,7 @@ services:
     environment:
       BANTAM_CONFIG_FILE: /etc/bantam/games.json
       BANTAM_DATA_DIR: /data
+      BANTAM_ADAPTERS_DIR: /bantam/adapters
       LITESTREAM_CONFIG: /data/litestream.generated.yml
       LITESTREAM_REPLICA_URL: s3://bantam-local/backups
       LITESTREAM_ENDPOINT: http://minio:9000
@@ -19,6 +20,7 @@ services:
     volumes:
       - bantam-data:/data
       - ./config/games.demo.json:/etc/bantam/games.json:ro
+      - ./test/fixtures/adapters:/bantam/adapters:ro
     read_only: true
     tmpfs: [/tmp]
     depends_on:

@@ -258,4 +258,15 @@ export class GameDatabase {
       .transaction(() => this.db.prepare("DELETE FROM players WHERE id=?").run(playerId).changes)
       .immediate();
   }
+
+  recentRuns(
+    limit: number,
+  ): Array<{ runId: string; adapterId: string; createdAt: Date; payloadHash: string }> {
+    const rows = this.db
+      .prepare(
+        "SELECT run_id runId, adapter_id adapterId, created_at createdAt, payload_hash payloadHash FROM runs ORDER BY created_at DESC LIMIT ?",
+      )
+      .all(limit) as Array<{ runId: string; adapterId: string; createdAt: number; payloadHash: string }>;
+    return rows.map((row) => ({ ...row, createdAt: new Date(row.createdAt) }));
+  }
 }
