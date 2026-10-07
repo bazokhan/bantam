@@ -3,10 +3,13 @@ import { join } from "node:path";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import swagger from "@fastify/swagger";
+import formbody from "@fastify/formbody";
 import { Type, type Static } from "@sinclair/typebox";
 import Fastify, { LogController, type FastifyInstance } from "fastify";
 import { Registry, collectDefaultMetrics, Counter, Histogram } from "prom-client";
 import { loadAdaptersForGame, listLoadedAdapters } from "./adapters/registry.js";
+import { ManifestStore } from "./admin/manifest-store.js";
+import { AdminDatabase } from "./db/admin-database.js";
 import { providerFor } from "./auth/provider.js";
 import { issueSession, revokeSession, rotateSession, verifyAccess } from "./auth/sessions.js";
 import type { LoadedConfig } from "./config.js";
@@ -66,8 +69,68 @@ const AroundQuery = Type.Object(
   { additionalProperties: false },
 );
 
-type Runtime = { game: RuntimeGame; db: GameDatabase; adapters: ReadonlyMap<string, GameAdapterV1> };
-export type { Runtime };
+export type RuntimeT = { game: RuntimeGame; db: GameDatabase; adapters: ReadonlyMap<string, GameAdapterV1> };
+export type Runtime = RuntimeT;
+
+// Container for the per-game runtimes. Exposes the underlying Map directly
+// so admin can iterate or mutate via the same surface; replaceAll is the only
+// mutation path that diffs old vs new (and tears down DBs on remove).
+class RuntimeRegistry {
+  readonly map = new Map<string, Runtime>();
+  get(id: string): Runtime | undefined {
+    return this.map.get(id);
+  }
+  list(): Runtime[] {
+    return [...this.map.values()];
+  }
+  entries(): IterableIterator<[string, Runtime]> {
+    return this.map.entries();
+  }
+  size(): number {
+    return this.map.size;
+  }
+  async replaceAll(
+    newGames: RuntimeGame[],
+    ctx: { dataDir: string; migrationsDirectory: string },
+  ): Promise<{ added: string[]; removed: string[]; kept: string[] }> {
+    const next = new Map<string, RuntimeGame>();
+    for (const game of newGames) next.set(game.id, game);
+    const removed: string[] = [];
+    for (const [id, runtime] of this.map) {
+      if (!next.has(id)) {
+        runtime.db.close();
+        this.map.delete(id);
+        removed.push(id);
+      }
+    }
+    const added: string[] = [];
+    const kept: string[] = [];
+    for (const [id, game] of next) {
+      const existing = this.map.get(id);
+      if (existing && existing.game === game) {
+        kept.push(id);
+        continue;
+      }
+      if (existing) {
+        existing.db.close();
+        this.map.delete(id);
+      }
+      const adapters = await loadAdaptersForGame(id, game.adapters);
+      const runtime: Runtime = {
+        game,
+        db: new GameDatabase(join(ctx.dataDir, "games", id, "bantam.sqlite"), ctx.migrationsDirectory),
+        adapters,
+      };
+      this.map.set(id, runtime);
+      added.push(id);
+    }
+    return { added, removed, kept };
+  }
+  closeAll(): void {
+    for (const runtime of this.map.values()) runtime.db.close();
+    this.map.clear();
+  }
+}
 
 export async function buildApp(
   config: LoadedConfig,
@@ -79,7 +142,12 @@ export async function buildApp(
       : {
           level: process.env.BANTAM_LOG_LEVEL ?? "info",
           redact: {
-            paths: ["req.headers.authorization", "req.headers.cookie", "res.headers.set-cookie"],
+            paths: [
+              "req.headers.authorization",
+              "req.headers.cookie",
+              "req.headers['set-cookie']",
+              "res.headers.set-cookie",
+            ],
             censor: "[REDACTED]",
           },
         };
@@ -96,6 +164,7 @@ export async function buildApp(
     origin: config.allowedOrigins.length ? config.allowedOrigins : false,
     credentials: false,
   });
+  await app.register(formbody);
   await app.register(swagger, {
     openapi: {
       info: {
@@ -108,17 +177,13 @@ export async function buildApp(
   });
 
   const migrationsDirectory = options.migrationsDirectory ?? join(process.cwd(), "migrations");
-  const runtimes = new Map<string, Runtime>();
-  for (const game of config.games.values()) {
-    const adapters = await loadAdaptersForGame(game.id, game.adapters);
-    runtimes.set(game.id, {
-      game,
-      db: new GameDatabase(join(config.dataDir, "games", game.id, "bantam.sqlite"), migrationsDirectory),
-      adapters,
-    });
-  }
+  const registry = new RuntimeRegistry();
+  await registry.replaceAll([...config.games.values()], {
+    dataDir: config.dataDir,
+    migrationsDirectory,
+  });
   app.addHook("onClose", async () => {
-    for (const runtime of runtimes.values()) runtime.db.close();
+    registry.closeAll();
   });
 
   const metrics = new Registry();
@@ -158,7 +223,7 @@ export async function buildApp(
   const authBuckets = new Map<string, { bucket: number; count: number }>();
   const authFingerprintSecret = randomBytes(32).toString("hex");
   function runtime(gameId: string): Runtime {
-    const value = runtimes.get(gameId);
+    const value = registry.get(gameId);
     if (!value) throw new BantamError("game-not-found", "Game not found", 404);
     return value;
   }
@@ -190,7 +255,7 @@ export async function buildApp(
 
   app.get("/healthz", { schema: { tags: ["system"] } }, async () => ({ status: "ok" }));
   app.get("/readyz", { schema: { tags: ["system"] } }, async () => {
-    const games = [...runtimes.entries()].map(([id, value]) => ({ id, ready: value.db.ready() }));
+    const games = [...registry.entries()].map(([id, value]) => ({ id, ready: value.db.ready() }));
     if (games.some((game) => !game.ready))
       throw new BantamError("not-ready", "One or more game databases are not ready", 503);
     return { status: "ready", games };
@@ -348,11 +413,30 @@ export async function buildApp(
     },
   );
 
-  // Admin UI: token-gated, read-only. Skipped if BANTAM_ADMIN_TOKEN is unset.
-  if (config.adminToken) {
-    const { registerAdmin } = await import("./admin/routes.js");
-    await registerAdmin(app, config.adminToken, runtimes);
-  }
+  // ─── Admin UI: session-cookie-gated. DB-backed. Always on (no env-var gate). ───────
+  const adminDb = new AdminDatabase(join(config.dataDir, "admin.sqlite"), migrationsDirectory);
+  const manifestStore = new ManifestStore(process.env.BANTAM_CONFIG_FILE, config.dataDir);
+  const { registerAdmin } = await import("./admin/routes.js");
+  await registerAdmin(
+    app,
+    adminDb,
+    registry.map,
+    async (games) => {
+      const result = await registry.replaceAll(games, {
+        dataDir: config.dataDir,
+        migrationsDirectory,
+      });
+      app.log.info(
+        { added: result.added, removed: result.removed, kept: result.kept.length },
+        "runtime reloaded after manifest edit",
+      );
+      return result;
+    },
+    manifestStore,
+  );
+  app.addHook("onClose", async () => {
+    adminDb.close();
+  });
 
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     const known = error instanceof BantamError;
@@ -381,3 +465,7 @@ export async function buildApp(
   });
   return app;
 }
+
+// The admin routes module expects a `Map<string, Runtime>`; the registry's
+// public `map` field exposes the underlying Map directly. We pass it as the
+// readonly source-of-truth — admin reads, registry mutates.

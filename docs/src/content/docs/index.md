@@ -311,7 +311,8 @@ Bantam is structured so an agent can wire a game end-to-end without reading pros
 - ✓ serves paginated leaderboards, player's rank, around-me
 - ✓ continuous backup to S3-compatible storage
 - ✗ does not validate the player's gameplay events (your adapter does)
-- ✗ does not provide an admin dashboard beyond read-only inspection
+- ✗ does not require any external service, identity provider, or database engine
+- ✓ ships a session-cookie admin dashboard: first registration creates the admin, dashboard edits the manifest in-place with hot reload
 
 **Sandbox expectations**:
 

@@ -13,6 +13,8 @@ const config: LoadedConfig = {
   environment: "test",
   dataDir: dir,
   allowedOrigins: [],
+  manifestPath: undefined,
+  manifestWritable: true,
   games: new Map([
     [
       "demo",

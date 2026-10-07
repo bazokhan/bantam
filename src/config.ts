@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { accessSync, constants, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { BantamError } from "./errors.js";
@@ -47,7 +47,9 @@ const GameSchema = Type.Object(
 const ManifestSchema = Type.Object(
   {
     environment: Type.Union([Type.Literal("development"), Type.Literal("test"), Type.Literal("production")]),
-    games: Type.Array(GameSchema, { minItems: 1, maxItems: 64 }),
+    // Empty `games` array is valid: the server boots with zero games and the admin
+    // UI surfaces a "no games yet" banner that drives manifest creation.
+    games: Type.Array(GameSchema, { maxItems: 64 }),
   },
   { additionalProperties: false },
 );
@@ -58,7 +60,8 @@ export type LoadedConfig = {
   games: Map<string, RuntimeGame>;
   allowedOrigins: string[];
   metricsToken?: string;
-  adminToken?: string;
+  manifestPath: string | undefined;
+  manifestWritable: boolean;
 };
 
 function validateAdapterSpec(value: unknown, path: string): AdapterSpec {
@@ -93,23 +96,55 @@ function validateAdapterSpec(value: unknown, path: string): AdapterSpec {
   );
 }
 
-export function loadConfig(
-  path = process.env.BANTAM_CONFIG_FILE ?? "/etc/bantam/games.json",
-  env: NodeJS.ProcessEnv = process.env,
-): LoadedConfig {
-  let raw: unknown;
+// Decide which on-disk path the manifest lives at, in priority order:
+//   1. $BANTAM_CONFIG_FILE if set AND readable (covers demo compose mounts + user overrides).
+//   2. /data/games.json (the canonical writable path inside the persistent volume).
+//   3. None — first boot with no manifest; admin UI drives creation.
+function resolveManifestPath(path: string | undefined): string | undefined {
+  if (path) {
+    try {
+      readFileSync(path, "utf8");
+      return path;
+    } catch {
+      // ENOENT or unreadable — fall through.
+    }
+  }
+  const fallback = "/data/games.json";
   try {
-    raw = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    throw new BantamError("invalid-config", `Cannot read game manifest: ${String(error)}`, 500);
+    readFileSync(fallback, "utf8");
+    return fallback;
+  } catch {
+    return undefined;
   }
-  if (!Value.Check(ManifestSchema, raw)) {
-    const details = [...Value.Errors(ManifestSchema, raw)]
-      .map((item) => `${item.path}: ${item.message}`)
-      .join("; ");
-    throw new BantamError("invalid-config", `Invalid game manifest: ${details}`, 500);
+}
+
+function isWritable(path: string | undefined): boolean {
+  if (!path) {
+    // No manifest exists yet. We test whether the canonical /data directory
+    // is writable by trying to create and remove a temp file inside it.
+    const probe = "/data/.bantam-write-probe";
+    try {
+      writeFileSync(probe, "");
+      rmSync(probe, { force: true });
+      return true;
+    } catch {
+      return false;
+    }
   }
-  const manifest = raw as { environment: LoadedConfig["environment"]; games: unknown[] };
+  try {
+    accessSync(path, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildLoadedConfig(
+  manifest: { environment: LoadedConfig["environment"]; games: unknown[] },
+  env: NodeJS.ProcessEnv,
+  manifestPath: string | undefined,
+  manifestWritable: boolean,
+): LoadedConfig {
   const only = env.BANTAM_ONLY_GAME;
   const candidateGames = manifest.games.filter(
     (game): game is Record<string, unknown> =>
@@ -160,6 +195,54 @@ export function loadConfig(
       .map((value) => value.trim())
       .filter(Boolean),
     ...(env.BANTAM_METRICS_TOKEN ? { metricsToken: env.BANTAM_METRICS_TOKEN } : {}),
-    ...(env.BANTAM_ADMIN_TOKEN ? { adminToken: env.BANTAM_ADMIN_TOKEN } : {}),
+    manifestPath,
+    manifestWritable,
   };
+}
+
+export function loadConfig(
+  path: string | undefined = process.env.BANTAM_CONFIG_FILE,
+  env: NodeJS.ProcessEnv = process.env,
+): LoadedConfig {
+  const manifestPath = resolveManifestPath(path);
+  const manifestWritable = isWritable(manifestPath ?? "/data/games.json");
+
+  let manifest: { environment: LoadedConfig["environment"]; games: unknown[] };
+  if (manifestPath) {
+    let raw: string;
+    try {
+      raw = readFileSync(manifestPath, "utf8");
+    } catch (error) {
+      throw new BantamError(
+        "invalid-config",
+        `Cannot read game manifest at ${manifestPath}: ${String(error)}`,
+        500,
+      );
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new BantamError(
+        "invalid-config",
+        `Cannot parse game manifest at ${manifestPath}: ${String(error)}`,
+        500,
+      );
+    }
+    if (!Value.Check(ManifestSchema, parsed)) {
+      const details = [...Value.Errors(ManifestSchema, parsed)]
+        .map((item) => `${item.path}: ${item.message}`)
+        .join("; ");
+      throw new BantamError("invalid-config", `Invalid game manifest at ${manifestPath}: ${details}`, 500);
+    }
+    manifest = parsed as { environment: LoadedConfig["environment"]; games: unknown[] };
+  } else {
+    // No manifest on disk — boot with empty games so the admin UI can drive creation.
+    process.stderr.write(
+      `[bantam] no game manifest found (looked at ${path ?? "(unset)"} and /data/games.json) — booting empty; visit the admin UI to create your first game\n`,
+    );
+    manifest = { environment: "development", games: [] };
+  }
+
+  return buildLoadedConfig(manifest, env, manifestPath, manifestWritable);
 }

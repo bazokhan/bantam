@@ -41,12 +41,11 @@ Restart the container to pick up new adapters. Full contract and authoring guide
 
 ## Admin UI
 
-```bash
-BANTAM_ADMIN_TOKEN=<token> docker compose up -d
-curl -H "Authorization: Bearer <token>" http://localhost:3000/admin/
-```
+The server boots with an empty manifest. To access the admin dashboard, open `http://localhost:3000/admin/register` once to create the inaugural admin (registration closes after the first admin exists). Then visit `/admin/login` for subsequent sessions.
 
-Read-only: lists games, loaded adapters, per-game health, recent runs (no payload bodies).
+The dashboard lists games, loaded adapters, per-game health, and recent runs (no payload bodies), plus a Manifest editor that validates JSON against the schema and hot-reloads the runtime — no container restart required for adding, removing, or replacing games.
+
+If you mount a `games.json` file into the container read-only, the editor shows a banner and disables save; unset `BANTAM_CONFIG_FILE` and let the server manage `/data/games.json` to edit through the UI.
 
 ## Verification
 
