@@ -1,19 +1,37 @@
 ---
 title: Your first game in 4 commands
-description: From a fresh directory to a working leaderboard with one Bash command and one JSON file.
+description: From a fresh container to a working leaderboard with one bash command and one browser click.
 ---
 
-The four commands below get you from zero to a real, authoritative leaderboard for a real game. Each step is one commit-sized action. Nothing in this page is required by Bantam itself; the framework doesn't care how you got here as long as your game code talks to `/v1/games/<gameId>/runs/<adapterId>` with a Bearer token.
+Four steps take you from zero to a real, authoritative leaderboard. No manifest file required at boot. No `BANTAM_ADMIN_TOKEN` to copy. Each step is one commit-sized action.
 
-- A working Docker host with Compose.
+- A working Docker host.
 - The `bantam` image, available on Docker Hub as [`bazokhan/bantam:<tag>`](https://hub.docker.com/r/bazokhan/bantam).
 - 64 KiB of free disk per game (SQLite + WAL).
 
 ## Step 1 — Start the service
 
 ```bash
-mkdir MyGame/.adapters MyGame/data
-cat > MyGame/games.json <<'EOF'
+mkdir bantam-data
+docker run -d --name bantam \
+  -p 3000:3000 \
+  -v "$PWD/bantam-data:/data" \
+  bazokhan/bantam:latest
+```
+
+Bantam boots with an empty manifest. The container starts, `/healthz` returns `{"status":"ok"}`, and `/readyz` returns `{"status":"ready","games":[]}`. No `games.json` was needed.
+
+## Step 2 — Register the first admin
+
+Open `http://localhost:3000/admin/register` in your browser. Fill in a username and password (8+ characters). The first registered account becomes the inaugural admin; once it exists, registration is closed.
+
+You are now logged in and redirected to `/admin/manifest`, which is currently empty. The session cookie is `HttpOnly`, `SameSite=Strict`, and lasts 30 days.
+
+## Step 3 — Create your first game from the dashboard
+
+Paste this manifest into the Manifest page:
+
+```json
 {
   "environment": "development",
   "games": [
@@ -31,32 +49,25 @@ cat > MyGame/games.json <<'EOF'
     }
   ]
 }
-EOF
-cat > MyGame/.env <<'EOF'
-BANTAM_GAME_DEMO_IDENTITY_SALT=demo-only-32-byte-random-please-rotate
-BANTAM_GAME_DEMO_SESSION_SECRET=demo-only-32-byte-random-please-rotate
-BANTAM_GAME_DEMO_CURSOR_SECRET=demo-only-32-byte-random-please-rotate
-EOF
+```
+
+Click **Save & reload**. The manifest is written to `/data/games.json` inside your `bantam-data` volume, and the server hot-reloads: `/readyz` now reports `{"status":"ready","games":[{"id":"demo","ready":true}]}`. No container restart required.
+
+Stop the container, set the per-game secrets, and start it again so the demo game can serve real sessions:
+
+```bash
+docker stop bantam
+docker rm bantam
 docker run -d --name bantam \
   -p 3000:3000 \
-  --env-file MyGame/.env \
-  -v MyGame/data:/data \
-  -v MyGame/games.json:/etc/bantam/games.json:ro \
-  -v MyGame/.adapters:/bantam/adapters \
+  -v "$PWD/bantam-data:/data" \
+  -e BANTAM_GAME_DEMO_IDENTITY_SALT=replace-with-32-random-bytes \
+  -e BANTAM_GAME_DEMO_SESSION_SECRET=replace-with-32-random-bytes \
+  -e BANTAM_GAME_DEMO_CURSOR_SECRET=replace-with-32-random-bytes \
   bazokhan/bantam:latest
 ```
 
-Bantam listens on `:3000`. The development auth provider accepts any code matching `^[A-Za-z0-9._~-]{3,128}$`. Production deployments must switch to `authProvider: "pgs-v2"` — see [Manifest and PGS v2](/configuration/).
-
-## Step 2 — Verify the service is ready
-
-```bash
-curl --fail http://localhost:3000/readyz
-```
-
-Expect `{"status":"ready","games":[{"id":"demo","ready":true}]}`. A non-200 response means a config error — see [Troubleshooting](/troubleshooting/).
-
-## Step 3 — Submit a score
+## Step 4 — Submit a score from your game client
 
 ```bash
 # 1. Get a session token (dev provider — any code works)
@@ -77,41 +88,13 @@ curl http://localhost:3000/v1/games/demo/leaderboards/high_score \
 
 The synthesized adapter `generic:high_score` accepts any object with `high_score: <safe-integer>` and writes the player's best score to the `high_score` board. Multiple submissions from the same player only improve if the new value is strictly higher.
 
-## Step 4 — Wire your game client
-
-The [TypeScript SDK](/reference/) wraps the auth + submit + retry + queue dance:
-
-```ts
-import { BantamClient, BrowserStorage } from "@gamercury/bantam-sdk";
-
-const bantam = new BantamClient({
-  baseUrl: "https://your-bantam.example.com",
-  gameId: "demo",
-  storage: new BrowserStorage(), // or any { get, set, remove }
-});
-
-// On game start, sign the player in (or cancel — offline play still works).
-await bantam.optionalLogin(() => getProviderServerAuthCode());
-
-// After every run the player finishes, queue it. Bantam flushes on its own.
-await bantam.queueBest({
-  gameId: "demo",
-  adapterId: "generic:high_score",
-  runId: `run-${Date.now()}`,
-  payload: { high_score: finalScore },
-  candidates: [{ boardId: "high_score", periodKey: "all_time", value: finalScore }],
-});
-```
-
-`queueBest` stores the run in `localStorage` and calls `flushQueue` automatically. The SDK retries on `500`/`429`, drops the run on `400` (server rejected it), and removes the run from storage once the server accepts it.
-
 ## What you get for free
 
 - **Best-only queue.** Submitting the same `(adapterId, periodKey)` again only sends the higher value.
 - **Idempotent retries.** Re-submitting the same `runId` returns the cached response — no duplicate leaderboard entries.
 - **Offline-friendly.** Auth cancellation and network failure leave the queue intact; runs flush on next online tick.
 - **Backups.** Litestream is wired into the runtime container — your `/data` directory replicates continuously to whatever S3 bucket you pointed at.
-- **Restore.** `docker run --rm -v bantam-restore:/data --entrypoint bantam-entrypoint bazokhan/bantam --restore-if-missing demo` pulls a fresh database from the bucket.
+- **Hot manifest edits.** Add, remove, or replace games from the admin dashboard at any time. No restart, no outage.
 
 ## When to graduate past `generic`
 

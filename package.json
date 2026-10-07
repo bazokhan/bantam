@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
+    "@fastify/formbody": "^9.0.0",
     "@fastify/helmet": "13.0.2",
     "@fastify/swagger": "9.6.1",
     "@fastify/type-provider-typebox": "6.1.0",

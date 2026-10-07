@@ -1,13 +1,17 @@
 ---
 title: Game manifest and configuration
-description: Adapter specs, multi-title isolation, secrets, and PGS v2.
+description: Adapter specs, multi-title isolation, secrets, manifest editing, and PGS v2.
 ---
 
 ## Game manifest
 
-Each entry declares `id`, `displayName`, `adapters`, `secretPrefix`, `gracePeriodHours`, and `authProvider`. Set `BANTAM_ONLY_GAME=<id>` to load only that title while preserving the same game-qualified URLs.
+Each entry declares `id`, `displayName`, `adapters`, `secretPrefix`, `gracePeriodHours`, and `authProvider`. The manifest is JSON and is either:
 
-`adapters` is an array of discriminator entries. Use `kind: "generic"` for synthesized trivial games, `kind: "file"` for adapters loaded from the mounted `/bantam/adapters` directory.
+- A file at `$BANTAM_CONFIG_FILE` (default `/etc/bantam/games.json`); if set and the file is readable, it's the source of truth.
+- Otherwise `${BANTAM_DATA_DIR}/games.json` (default `/data/games.json`) — the canonical writable path inside the persistent volume.
+- If neither exists, the server boots with `games: []` and the admin dashboard offers an editor.
+
+`adapters` is an array of discriminator entries. Use `kind: "generic"` for synthesized trivial games, `kind: "file"` for adapters loaded from the mounted `BANTAM_ADAPTERS_DIR` directory (default `/bantam/adapters`).
 
 ```json
 {
@@ -33,7 +37,15 @@ Each entry declares `id`, `displayName`, `adapters`, `secretPrefix`, `gracePerio
 }
 ```
 
+Set `BANTAM_ONLY_GAME=<id>` to load only that title while preserving the same game-qualified URLs.
+
 See [Authoring — Generic boards](/generic-boards/) and [Authoring — File adapters](/adapter-authoring/) for the full contract.
+
+## Editing from the dashboard
+
+The [admin dashboard](/admin-dashboard/) has a Manifest page at `/admin/manifest`. Changes are validated against the same TypeBox schema the boot loader runs, then written atomically (write to `<path>.tmp` then rename). On success the server hot-reloads runtimes; no container restart is needed.
+
+If the manifest path is read-only (e.g. a `:ro` mount in compose), the editor is disabled and a banner explains how to switch to a writable path. Saving a manifest that fails schema validation returns 400 with the error list rendered in the response.
 
 ## Per-game secrets
 
@@ -48,11 +60,11 @@ For `authProvider: "pgs-v2"`, additionally:
 - `BANTAM_GAME_DEMO_PGS_CLIENT_ID`
 - `BANTAM_GAME_DEMO_PGS_CLIENT_SECRET`
 
-Every value must be at least 16 characters. Use independent random values per title and purpose. Rotating the identity salt changes player pseudonyms and must be treated as an account migration. Rotating the session secret immediately invalidates access tokens; refresh sessions can then mint new ones only if the signing change is coordinated.
+Every value must be at least 16 characters. Use independent random values per title and purpose. Rotating the identity salt changes player pseudonyms and must be treated as an account migration. Rotating the session secret immediately invalidates access tokens; refresh sessions can then mint new ones only if the signing change is coordinated. **Per-game secrets are read from env at boot and at each manifest reload; rotating requires a container restart.**
 
 ## Adapter directory
 
-`BANTAM_ADAPTERS_DIR` (default `/bantam/adapters`) is scanned for compiled `.js`/`.mjs` modules at boot. Each module's default export (or named export `adapter`) implements `GameAdapterV1`. The loader rejects modules that don't satisfy the contract and refuses duplicate ids across modules. See [Authoring — File adapters](/adapter-authoring/) for the module shape.
+`BANTAM_ADAPTERS_DIR` (default `/bantam/adapters`) is scanned for compiled `.js`/`.mjs` modules at boot and at each manifest reload. Each module's default export (or named export `adapter`) implements `GameAdapterV1`. The loader rejects modules that don't satisfy the contract and refuses duplicate ids across modules. See [Authoring — File adapters](/adapter-authoring/) for the module shape.
 
 ## Play Games Services v2
 

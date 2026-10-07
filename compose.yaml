@@ -19,6 +19,9 @@ services:
       AWS_REGION: us-east-1
     volumes:
       - bantam-data:/data
+      # Demo manifest is mounted read-only — useful for shipping a known game.
+      # To use the admin Manifest editor, drop this mount and use the UI at
+      # /admin/manifest after the inaugural admin registration.
       - ./config/games.demo.json:/etc/bantam/games.json:ro
       - ./test/fixtures/adapters:/bantam/adapters:ro
     read_only: true
