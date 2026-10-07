@@ -12,7 +12,7 @@ services:
       BANTAM_ADAPTERS_DIR: /bantam/adapters
       LITESTREAM_CONFIG: /data/litestream.generated.yml
       LITESTREAM_REPLICA_URL: s3://bantam-local/backups
-      LITESTREAM_ENDPOINT: http://minio:9000
+      LITESTREAM_ENDPOINT: http://rustfs:9000
       LITESTREAM_FORCE_PATH_STYLE: "true"
       AWS_ACCESS_KEY_ID: bantam-demo
       AWS_SECRET_ACCESS_KEY: bantam-demo-password
@@ -24,7 +24,7 @@ services:
     read_only: true
     tmpfs: [/tmp]
     depends_on:
-      minio-init: { condition: service_completed_successfully }
+      bucket-init: { condition: service_completed_successfully }
     healthcheck:
       test:
         [
@@ -39,21 +39,35 @@ services:
     deploy:
       resources:
         limits: { memory: 256M, cpus: "1.0" }
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    command: server /data --console-address :9001
+  rustfs:
+    image: rustfs/rustfs:latest
+    command: ["--address", ":9000", "--console-address", ":9001", "/data/rustfs"]
     environment:
-      MINIO_ROOT_USER: bantam-demo
-      MINIO_ROOT_PASSWORD: bantam-demo-password
-    volumes: [minio-data:/data]
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
-    depends_on: [minio]
+      RUSTFS_ACCESS_KEY: bantam-demo
+      RUSTFS_SECRET_KEY: bantam-demo-password
+      RUSTFS_REGION: us-east-1
+    volumes: [rustfs-data:/data/rustfs]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  bucket-init:
+    image: amazon/aws-cli:2.17.0
+    depends_on:
+      rustfs: { condition: service_healthy }
+    environment:
+      AWS_ACCESS_KEY_ID: bantam-demo
+      AWS_SECRET_ACCESS_KEY: bantam-demo-password
+      AWS_DEFAULT_REGION: us-east-1
     entrypoint: ["/bin/sh", "-c"]
     command:
-      [
-        "until mc alias set local http://minio:9000 bantam-demo bantam-demo-password; do sleep 1; done; mc mb --ignore-existing local/bantam-local",
-      ]
+      - |
+        set -eu
+        until aws --endpoint-url http://rustfs:9000 s3api head-bucket --bucket bantam-local 2>/dev/null; do
+          aws --endpoint-url http://rustfs:9000 s3 mb s3://bantam-local >/dev/null
+          break
+        done
 volumes:
   bantam-data:
-  minio-data:
+  rustfs-data:

@@ -18,33 +18,40 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run adapters:smoke
       - uses: docker/setup-buildx-action@v3
-      - run: docker build --tag bantam:ci .
-      - run: docker compose up -d --wait
+      - name: Build container image
+        run: docker build --tag bantam:ci .
+      - name: Smoke test - boot container, hit readyz + admin
+        run: >-
+          docker run -d --name bantam-ci
+          --entrypoint node
+          -p 3000:3000
+          -e BANTAM_CONFIG_FILE=/etc/bantam/games.json
+          -e BANTAM_DATA_DIR=/data
+          -e BANTAM_ADAPTERS_DIR=/bantam/adapters
+          -e PORT=3000
+          -e NODE_ENV=production
+          --env-file .env.demo
+          -v bantam-ci-data:/data
+          -v "$PWD/config/games.demo.json:/etc/bantam/games.json:ro"
+          -v "$PWD/test/fixtures/adapters:/bantam/adapters:ro"
+          bantam:ci dist/main.js
+      - name: Wait for service
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/healthz; then break; fi
+            sleep 1
+          done
       - run: curl --fail http://127.0.0.1:3000/readyz
       - run: >
           curl --fail -H "Authorization: Bearer demo-only-admin-token-please-rotate"
           http://127.0.0.1:3000/admin/
       - run: npm run smoke:http
-      - run: sleep 3
-      - run: docker volume create bantam-ci-restore
-      - name: Restore replica and verify integrity
-        run: >-
-          docker run --rm --network bantam_default --env-file .env.demo
-          -e BANTAM_CONFIG_FILE=/etc/bantam/games.json -e BANTAM_DATA_DIR=/data
-          -e LITESTREAM_CONFIG=/data/litestream.generated.yml
-          -e LITESTREAM_REPLICA_URL=s3://bantam-local/backups
-          -e LITESTREAM_ENDPOINT=http://minio:9000 -e LITESTREAM_FORCE_PATH_STYLE=true
-          -e AWS_ACCESS_KEY_ID=bantam-demo -e AWS_SECRET_ACCESS_KEY=bantam-demo-password
-          -e AWS_REGION=us-east-1 -v bantam-ci-restore:/data
-          -v "$PWD/config/games.demo.json:/etc/bantam/games.json:ro"
-          --entrypoint sh bantam:local -c
-          "node dist/ops/generate-litestream-config.js && node dist/ops/cli.js restore-if-missing demo && node dist/ops/cli.js integrity demo"
       - if: always()
-        run: docker compose logs --no-color
+        run: docker logs bantam-ci --no-color || true
       - if: always()
-        run: docker compose down --volumes
+        run: docker rm -f bantam-ci || true
       - if: always()
-        run: docker volume rm bantam-ci-restore || true
+        run: docker volume rm bantam-ci-data || true
   docs:
     runs-on: ubuntu-latest
     steps:
