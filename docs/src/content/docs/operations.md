@@ -11,7 +11,7 @@ Alert on repeated 5xx responses, readiness failures, disk pressure, container re
 
 ## Admin dashboard
 
-The admin dashboard at `/admin/` lists games, adapters, and per-game health. It is read-only for inspections, plus a Manifest editor that validates and hot-reloads the manifest. The dashboard is gated by a session cookie issued on login; the first registration creates the only admin. See [Admin dashboard](/admin-dashboard/).
+The admin dashboard at `/admin/` lists games, adapters, and per-game health. It is read-only for inspections, plus a Manifest editor that validates and hot-reloads the manifest. The dashboard is gated by a session cookie issued on login; the first registration creates the only admin. See [Admin dashboard](/admin-dashboard/) and [First deploy](/first-deploy/).
 
 ## Migrations
 
@@ -25,6 +25,23 @@ Per-game DBs are at `/data/games/<id>/bantam.sqlite`. The admin DB is at `/data/
 ## Release record
 
 Record the Git commit, image digest, service version, adapter versions, highest migration, configuration revision, backup status, startup measurement, and rollback decision. Verify a real HTTP flow after deployment; container health alone does not validate PGS or object storage.
+
+## Release lanes
+
+Every release must pass these in order. A skipped lane is a blocker (see the project engineering rules). Run them locally before pushing — `npm run verify` chains them.
+
+| Lane                     | Command                                      | Catches                                                    |
+| ------------------------ | -------------------------------------------- | ---------------------------------------------------------- |
+| Format                   | `npm run format:check` (or `npm run format`) | Prettier formatting drift                                  |
+| Lint                     | `npm run lint`                               | Unsafe `any` types, unused imports, `await` of non-Promise |
+| Typecheck                | `npm run typecheck`                          | TS errors that ESLint misses                               |
+| Unit + integration tests | `npm test`                                   | Behavioral regressions                                     |
+| Production build         | `npm run build`                              | Build target mismatch                                      |
+| OpenAPI drift            | `npm run openapi:check`                      | Spec / implementation mismatch                             |
+| Adapter smoke            | `npm run adapters:smoke`                     | File adapter loader end-to-end                             |
+| Docs build               | `npm run docs:check`                         | Starlight/Astro compile errors                             |
+
+CI runs the first six; the smoke and docs lanes are local-only unless the workflow is updated.
 
 ## Genuine production inputs
 
