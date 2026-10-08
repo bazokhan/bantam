@@ -68,18 +68,34 @@ export async function registerAdmin(
     const url = _request.url;
     const next = new URL(url, "http://x").searchParams.get("next") ?? "/admin/";
     const opened = countAdmins() === 0;
-    const body = `
-      <div class="card">
-        <h1>${opened ? "First admin registration" : "Log in"}</h1>
-        ${opened ? banner("No admins exist yet. The first registration creates the inaugural admin account. After that, this page only accepts logins.", "warn") : ""}
+    // When no admin exists yet, render a registration form (POSTs to
+    // /admin/register), NOT a login form. Submitting the login form before
+    // any admin exists is a dead-end — the login handler has no row to verify
+    // against and replies with "incorrect username or password", which the
+    // user reads as a registration failure. Show the registration form up
+    // front when opened=true.
+    if (opened) {
+      const body = `<div class="card">
+        <h1>Create the first admin</h1>
+        ${banner("No admin accounts exist yet. This is the only moment registration is open. Once you create the first admin, future visitors must log in.", "warn")}
+        <form class="bantam" method="post" action="/admin/register">
+          <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"></label>
+          <label>Password <input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"></label>
+          <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"></label>
+          <button type="submit">Create admin</button>
+        </form>
+      </div>`;
+      return reply.type("text/html").send(publicShell("First admin", body));
+    }
+    const body = `<div class="card">
+        <h1>Log in</h1>
         <form class="bantam" method="post" action="/admin/login${next !== "/admin/" ? `?next=${encodeURIComponent(next)}` : ""}">
           <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"></label>
           <label>Password <input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"></label>
-          <button type="submit">${opened ? "Create admin & continue" : "Log in"}</button>
+          <button type="submit">Log in</button>
         </form>
-        ${opened ? `<p class="muted">Already registered? <a href="/admin/login">Log in</a> instead.</p>` : ""}
       </div>`;
-    return reply.type("text/html").send(publicShell(opened ? "First admin" : "Login", body));
+    return reply.type("text/html").send(publicShell("Login", body));
   });
 
   app.post("/admin/login", async (request, reply) => {

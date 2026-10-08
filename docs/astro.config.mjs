@@ -91,6 +91,7 @@ export default defineConfig({
           items: [
             { label: "Bantam", slug: "index" },
             { label: "Your first game in 4 commands", slug: "quickstart" },
+            { label: "First deploy", slug: "first-deploy" },
           ],
         },
         {

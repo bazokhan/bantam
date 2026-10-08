@@ -367,6 +367,13 @@ describe("admin auth + manifest edit", () => {
       // No admins yet → /admin/register renders the form.
       const form = await app.inject({ method: "GET", url: "/admin/register" });
       expect(form.statusCode).toBe(200);
+      // The login page renders a registration form (not a login form) when no
+      // admin exists. The form action must be /admin/register, otherwise the
+      // login handler rejects the submission with "incorrect username or password"
+      // and the user reads it as a registration failure.
+      const login = await app.inject({ method: "GET", url: "/admin/login" });
+      expect(login.statusCode).toBe(200);
+      expect(login.body).toMatch(/action="\/admin\/register"/);
       // Submit registration.
       const reg = await app.inject({
         method: "POST",
@@ -380,6 +387,9 @@ describe("admin auth + manifest edit", () => {
       const adminDb = new AdminDatabase(join(dataDir, "admin.sqlite"), join(process.cwd(), "migrations"));
       expect(adminDb.countAdmins()).toBe(1);
       adminDb.close();
+      // Once an admin exists, /admin/login renders the actual login form.
+      const loginAfter = await app.inject({ method: "GET", url: "/admin/login" });
+      expect(loginAfter.body).toMatch(/action="\/admin\/login/);
       // Registration is now closed.
       const closed = await app.inject({
         method: "POST",
