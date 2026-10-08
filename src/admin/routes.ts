@@ -80,8 +80,8 @@ export async function registerAdmin(
         ${banner("No admin accounts exist yet. This is the only moment registration is open. Once you create the first admin, future visitors must log in.", "warn")}
         <form class="bantam" method="post" action="/admin/register">
           <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"></label>
-          <label>Password <input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"></label>
-          <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"></label>
+          <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
+          <label class="pw-row">Confirm password <span class="pw-wrap"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
           <button type="submit">Create admin</button>
         </form>
       </div>`;
@@ -91,7 +91,7 @@ export async function registerAdmin(
         <h1>Log in</h1>
         <form class="bantam" method="post" action="/admin/login${next !== "/admin/" ? `?next=${encodeURIComponent(next)}` : ""}">
           <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"></label>
-          <label>Password <input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"></label>
+          <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
           <button type="submit">Log in</button>
         </form>
       </div>`;
@@ -100,36 +100,40 @@ export async function registerAdmin(
 
   app.post("/admin/login", async (request, reply) => {
     const body = request.body as Record<string, unknown> | undefined;
-    const username = parseUsername(typeof body?.["username"] === "string" ? body["username"] : "");
-    const password = validatePassword(typeof body?.["password"] === "string" ? body["password"] : "");
+    // Trim and normalize to make typos harder: collapse case so "Alice" and
+    // "alice" hit the same row.
+    const usernameRaw = typeof body?.["username"] === "string" ? (body["username"] as string) : "";
+    const username = parseUsername(usernameRaw.toLowerCase());
+    const password = validatePassword(
+      typeof body?.["password"] === "string" ? (body["password"] as string) : "",
+    );
     const next = (() => {
       const url = request.url;
       const v = new URL(url, "http://x").searchParams.get("next") ?? "/admin/";
       if (!v.startsWith("/admin/") && !v.startsWith("/admin")) return "/admin/";
       return v;
     })();
+    // Always re-render the login form so the user can correct typos without
+    // losing their input. The server-side error message is the only signal
+    // telling them what went wrong; clearing the form on rejection is hostile.
+    const renderError = (title: string, message: string) => {
+      const body = `<div class="card">
+          <h1>${escapeHtml(title)}</h1>
+          ${banner(escapeHtml(message), "bad")}
+          <form class="bantam" method="post" action="/admin/login${next !== "/admin/" ? `?next=${encodeURIComponent(next)}` : ""}">
+            <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" value="${escapeHtml(usernameRaw)}"></label>
+            <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
+            <button type="submit">Log in</button>
+          </form>
+        </div>`;
+      return reply.type("text/html").send(publicShell("Login", body));
+    };
     if (!username || !password) {
-      return reply
-        .code(400)
-        .type("text/html")
-        .send(
-          publicShell(
-            "Login",
-            `<div class="card"><h1>Login failed</h1>${banner("Invalid username or password format.", "bad")}<p><a href="/admin/login">Back</a></p></div>`,
-          ),
-        );
+      return renderError("Login failed", "Invalid username or password format.");
     }
     const row = adminDb.findAdminByUsername(username);
     if (!row || !(await verifyPasswordAsync(password, row.password_hash))) {
-      return reply
-        .code(401)
-        .type("text/html")
-        .send(
-          publicShell(
-            "Login",
-            `<div class="card"><h1>Login failed</h1>${banner("Username or password is incorrect.", "bad")}<p><a href="/admin/login">Back</a></p></div>`,
-          ),
-        );
+      return renderError("Login failed", "Username or password is incorrect.");
     }
     const session = issueAdminSession(adminDb, row.id);
     adminDb.updateAdminLastLogin(row.id, Date.now());
@@ -157,8 +161,8 @@ export async function registerAdmin(
         ${banner("No admin accounts exist yet. This is the only moment registration is open. Once you create the first admin, future visitors must log in.", "warn")}
         <form class="bantam" method="post" action="/admin/register">
           <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"><span class="muted">Letters, digits, dot, underscore, dash. Up to 64 chars.</span></label>
-          <label>Password <input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><span class="muted">At least 8 characters.</span></label>
-          <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"></label>
+          <label class="pw-row">Password <span class="muted">At least 8 characters.</span><span class="pw-wrap"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
+          <label class="pw-row">Confirm password <span class="pw-wrap"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
           <button type="submit">Create admin</button>
         </form>
       </div>`;
@@ -170,41 +174,39 @@ export async function registerAdmin(
       return reply.code(404).type("text/plain").send("registration closed");
     }
     const body = request.body as Record<string, unknown> | undefined;
-    const username = parseUsername(typeof body?.["username"] === "string" ? body["username"] : "");
-    const password = validatePassword(typeof body?.["password"] === "string" ? body["password"] : "");
-    const confirm = typeof body?.["confirm"] === "string" ? body["confirm"] : "";
-    if (!username || !password) {
-      return reply
+    const usernameRaw = typeof body?.["username"] === "string" ? (body["username"] as string) : "";
+    const username = parseUsername(usernameRaw.toLowerCase());
+    const password = validatePassword(
+      typeof body?.["password"] === "string" ? (body["password"] as string) : "",
+    );
+    const confirm = typeof body?.["confirm"] === "string" ? (body["confirm"] as string) : "";
+    const renderRegError = (message: string) =>
+      reply
         .code(400)
         .type("text/html")
         .send(
           publicShell(
             "Register",
-            `<div class="card"><h1>Registration failed</h1>${banner("Username or password invalid.", "bad")}<p><a href="/admin/register">Back</a></p></div>`,
+            `<div class="card">
+              <h1>Registration failed</h1>
+              ${banner(message, "bad")}
+              <form class="bantam" method="post" action="/admin/register">
+                <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" value="${escapeHtml(usernameRaw)}"></label>
+                <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
+                <label class="pw-row">Confirm password <span class="pw-wrap"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
+                <button type="submit">Create admin</button>
+              </form>
+            </div>`,
           ),
         );
+    if (!username || !password) {
+      return renderRegError("Username or password invalid.");
     }
     if (password !== confirm) {
-      return reply
-        .code(400)
-        .type("text/html")
-        .send(
-          publicShell(
-            "Register",
-            `<div class="card"><h1>Registration failed</h1>${banner("Passwords do not match.", "bad")}<p><a href="/admin/register">Back</a></p></div>`,
-          ),
-        );
+      return renderRegError("Passwords do not match.");
     }
     if (adminDb.findAdminByUsername(username)) {
-      return reply
-        .code(409)
-        .type("text/html")
-        .send(
-          publicShell(
-            "Register",
-            `<div class="card"><h1>Registration failed</h1>${banner("Username is already taken.", "bad")}<p><a href="/admin/register">Back</a></p></div>`,
-          ),
-        );
+      return renderRegError("Username is already taken.");
     }
     const hashed = await hashPasswordAsync(password);
     adminDb.insertAdmin(randomUUID(), username, formatStored(hashed), hashed.salt, Date.now());
