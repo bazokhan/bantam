@@ -62,6 +62,21 @@ export async function registerAdmin(
 
   const countAdmins = () => adminDb.countAdmins();
 
+  // Decide the Secure flag for the session cookie. Browsers refuse Secure
+  // cookies on plain HTTP, so we must not set Secure when the request is
+  // HTTP (even behind a TLS-terminating proxy, request.protocol still reads
+  // the inner scheme unless trustProxy is enabled — keep the explicit env
+  // override as the supported way to lock it down).
+  // - BANTAM_ADMIN_COOKIE_SECURE=true  → always Secure (real production)
+  // - BANTAM_ADMIN_COOKIE_SECURE=false → never Secure (local HTTP testing)
+  // - unset                            → Secure iff the request is HTTPS
+  const cookieSecureFor = (request: { protocol: string }): boolean => {
+    const flag = process.env.BANTAM_ADMIN_COOKIE_SECURE;
+    if (flag === "true") return true;
+    if (flag === "false") return false;
+    return request.protocol === "https";
+  };
+
   // ─── Auth pages ───────────────────────────────────────────────────────────────
 
   app.get("/admin/login", async (_request, reply) => {
@@ -141,7 +156,7 @@ export async function registerAdmin(
         serializeCookie(ADMIN_COOKIE_NAME, session.cookie, {
           maxAge: Math.floor(ADMIN_SESSION_MAX_AGE_MS / 1000),
           path: "/admin/",
-          secure: process.env.BANTAM_ADMIN_COOKIE_SECURE !== "false",
+          secure: cookieSecureFor(request),
           httpOnly: true,
           sameSite: "Strict",
         }),
@@ -215,7 +230,7 @@ export async function registerAdmin(
         serializeCookie(ADMIN_COOKIE_NAME, session.cookie, {
           maxAge: Math.floor(ADMIN_SESSION_MAX_AGE_MS / 1000),
           path: "/admin/",
-          secure: process.env.BANTAM_ADMIN_COOKIE_SECURE !== "false",
+          secure: cookieSecureFor(request),
           httpOnly: true,
           sameSite: "Strict",
         }),
