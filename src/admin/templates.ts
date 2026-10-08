@@ -57,7 +57,13 @@ form.bantam textarea { min-height: 18rem; font-family: ui-monospace, Cascadia Co
 .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
 .actions form { margin: 0; }
 .actions button, .actions a.btn { background: var(--accent); color: #0a0214; border: 0; border-radius: 6px; padding: 0.5rem 0.85rem; font-weight: 600; cursor: pointer; text-decoration: none; }
-.actions .btn.secondary { background: var(--bg); color: var(--fg); border: 1px solid var(--border); }`;
+.actions .btn.secondary { background: var(--bg); color: var(--fg); border: 1px solid var(--border); }
+.pw-row { flex-direction: column; gap: 0.25rem; }
+.pw-wrap { display: flex; gap: 0.5rem; align-items: stretch; }
+.pw-wrap input { flex: 1; min-width: 0; }
+.pw-toggle { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 0 0.65rem; font-size: 0.85rem; font-weight: 500; }
+.pw-toggle:hover { color: var(--fg); border-color: var(--accent); }
+.pw-toggle:focus { outline: 2px solid var(--accent); outline-offset: 1px; }`;
 }
 
 export function shell(
@@ -97,6 +103,22 @@ export function publicShell(title: string, body: string): string {
 </head>
 <body>
 ${body}
+<script>
+// Password show/hide toggle. No framework, no build step — just toggle the
+// input type and the button label. Re-applies to any form on the page.
+(function () {
+  for (const btn of document.querySelectorAll(".pw-toggle")) {
+    const input = btn.parentElement && btn.parentElement.querySelector("input[type=password]");
+    if (!input) continue;
+    btn.addEventListener("click", function () {
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      btn.textContent = show ? btn.dataset.hideLabel || "Hide" : btn.dataset.showLabel || "Show";
+      btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    });
+  }
+})();
+</script>
 </body>
 </html>`;
 }
