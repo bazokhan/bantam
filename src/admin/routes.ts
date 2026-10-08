@@ -102,11 +102,9 @@ export async function registerAdmin(
     const body = request.body as Record<string, unknown> | undefined;
     // Trim and normalize to make typos harder: collapse case so "Alice" and
     // "alice" hit the same row.
-    const usernameRaw = typeof body?.["username"] === "string" ? (body["username"] as string) : "";
+    const usernameRaw = typeof body?.["username"] === "string" ? body["username"] : "";
     const username = parseUsername(usernameRaw.toLowerCase());
-    const password = validatePassword(
-      typeof body?.["password"] === "string" ? (body["password"] as string) : "",
-    );
+    const password = validatePassword(typeof body?.["password"] === "string" ? body["password"] : "");
     const next = (() => {
       const url = request.url;
       const v = new URL(url, "http://x").searchParams.get("next") ?? "/admin/";
@@ -116,7 +114,7 @@ export async function registerAdmin(
     // Always re-render the login form so the user can correct typos without
     // losing their input. The server-side error message is the only signal
     // telling them what went wrong; clearing the form on rejection is hostile.
-    const renderError = (title: string, message: string) => {
+    const renderError = (title: string, message: string, code: number) => {
       const body = `<div class="card">
           <h1>${escapeHtml(title)}</h1>
           ${banner(escapeHtml(message), "bad")}
@@ -126,14 +124,14 @@ export async function registerAdmin(
             <button type="submit">Log in</button>
           </form>
         </div>`;
-      return reply.type("text/html").send(publicShell("Login", body));
+      return reply.code(code).type("text/html").send(publicShell("Login", body));
     };
     if (!username || !password) {
-      return renderError("Login failed", "Invalid username or password format.");
+      return renderError("Login failed", "Invalid username or password format.", 400);
     }
     const row = adminDb.findAdminByUsername(username);
     if (!row || !(await verifyPasswordAsync(password, row.password_hash))) {
-      return renderError("Login failed", "Username or password is incorrect.");
+      return renderError("Login failed", "Username or password is incorrect.", 401);
     }
     const session = issueAdminSession(adminDb, row.id);
     adminDb.updateAdminLastLogin(row.id, Date.now());
@@ -174,12 +172,10 @@ export async function registerAdmin(
       return reply.code(404).type("text/plain").send("registration closed");
     }
     const body = request.body as Record<string, unknown> | undefined;
-    const usernameRaw = typeof body?.["username"] === "string" ? (body["username"] as string) : "";
+    const usernameRaw = typeof body?.["username"] === "string" ? body["username"] : "";
     const username = parseUsername(usernameRaw.toLowerCase());
-    const password = validatePassword(
-      typeof body?.["password"] === "string" ? (body["password"] as string) : "",
-    );
-    const confirm = typeof body?.["confirm"] === "string" ? (body["confirm"] as string) : "";
+    const password = validatePassword(typeof body?.["password"] === "string" ? body["password"] : "");
+    const confirm = typeof body?.["confirm"] === "string" ? body["confirm"] : "";
     const renderRegError = (message: string) =>
       reply
         .code(400)
