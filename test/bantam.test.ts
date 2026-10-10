@@ -239,7 +239,7 @@ describe("real HTTP API", () => {
           url: `/v1/games/${id}/auth/exchange`,
           payload: { authorizationCode: code },
         })
-      ).json<{ accessToken: string }>();
+      ).json<{ accessToken: string; refreshToken: string }>();
     const a = await login("demo-a", "player-a");
     const b = await login("demo-b", "player-a");
     const crossGame = await app.inject({
@@ -283,6 +283,40 @@ describe("real HTTP API", () => {
       headers: { authorization: `Bearer ${a.accessToken}` },
     });
     expect(board.json<{ entries: { value: number }[] }>().entries[0]?.value).toBe(99);
+    const me = await app.inject({
+      method: "GET",
+      url: "/v1/games/demo-a/leaderboards/high_score/me",
+      headers: { authorization: `Bearer ${a.accessToken}` },
+    });
+    expect(me.statusCode, me.body).toBe(200);
+    expect(me.json<{ entry: { value: number } | null }>().entry?.value).toBe(99);
+    const around = await app.inject({
+      method: "GET",
+      url: "/v1/games/demo-a/leaderboards/high_score/around-me?radius=3",
+      headers: { authorization: `Bearer ${a.accessToken}` },
+    });
+    expect(around.statusCode, around.body).toBe(200);
+    expect(around.json<{ entries: { value: number }[] }>().entries.some((entry) => entry.value === 99)).toBe(
+      true,
+    );
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/games/demo-a/auth/logout",
+          payload: { refreshToken: a.refreshToken },
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/games/demo-a/auth/refresh",
+          payload: { refreshToken: a.refreshToken },
+        })
+      ).statusCode,
+    ).toBe(401);
     expect(
       (
         await app.inject({
@@ -292,6 +326,12 @@ describe("real HTTP API", () => {
         })
       ).statusCode,
     ).toBe(204);
+    const emptyPublic = await app.inject({
+      method: "GET",
+      url: "/v1/games/demo-a/leaderboards/high_score?limit=1",
+    });
+    expect(emptyPublic.statusCode, emptyPublic.body).toBe(200);
+    expect(emptyPublic.json<{ entries: unknown[] }>().entries).toEqual([]);
     await app.close();
   }, 30_000);
   it("serializes concurrent submissions without losing the best", async () => {

@@ -9,13 +9,13 @@ Self-hosted Coolify API for this studio. **Never paste tokens, env values, or ad
 
 ## Auth (paths only)
 
-| What | Where |
-| --- | --- |
-| Coolify UI / API | `https://dev.trugraph.io` (`/api/v1/...`) |
-| API token file | `D:\Gamercury\vault\COOLIFY_API_KEYS.txt` |
-| Token shape | Laravel Sanctum `digits\|hex` on its own line (not the MCP URL line) |
-| Bantam admin login | `D:\Gamercury\bantam\deploy\credentials.local\admin.env` |
-| Moon Gravity game secrets | `D:\Gamercury\bantam\deploy\credentials.local\moon-gravity.env` |
+| What                      | Where                                                                |
+| ------------------------- | -------------------------------------------------------------------- |
+| Coolify UI / API          | `https://dev.trugraph.io` (`/api/v1/...`)                            |
+| API token file            | `D:\Gamercury\vault\COOLIFY_API_KEYS.txt`                            |
+| Token shape               | Laravel Sanctum `digits\|hex` on its own line (not the MCP URL line) |
+| Bantam admin login        | `D:\Gamercury\bantam\deploy\credentials.local\admin.env`             |
+| Moon Gravity game secrets | `D:\Gamercury\bantam\deploy\credentials.local\moon-gravity.env`      |
 
 Read those files. Do not echo values. Authorization header: `Bearer <token>`.
 
@@ -32,16 +32,16 @@ Print names, status, fqdn, and env **keys** only.
 
 All under `https://dev.trugraph.io/api/v1`.
 
-| Action | Method | Path |
-| --- | --- | --- |
-| Version | GET | `/version` |
-| Projects | GET | `/projects` |
-| Applications | GET | `/applications` |
-| One app | GET | `/applications/{uuid}` |
-| List/create env | GET/POST | `/applications/{uuid}/envs` |
-| List/create storage | GET/POST | `/applications/{uuid}/storages` |
-| Restart | POST | `/applications/{uuid}/restart` |
-| Exec (needs terminal ability) | POST | `/applications/{uuid}/exec` body `{"command":"..."}` |
+| Action                        | Method   | Path                                                 |
+| ----------------------------- | -------- | ---------------------------------------------------- |
+| Version                       | GET      | `/version`                                           |
+| Projects                      | GET      | `/projects`                                          |
+| Applications                  | GET      | `/applications`                                      |
+| One app                       | GET      | `/applications/{uuid}`                               |
+| List/create env               | GET/POST | `/applications/{uuid}/envs`                          |
+| List/create storage           | GET/POST | `/applications/{uuid}/storages`                      |
+| Restart                       | POST     | `/applications/{uuid}/restart`                       |
+| Exec (needs terminal ability) | POST     | `/applications/{uuid}/exec` body `{"command":"..."}` |
 
 Create env body: `{ "key", "value", "is_preview": false, "is_literal": true, "is_shown_once": true }` for secrets (`false` for CORS). Coolify env changes need a **restart** before the container sees them.
 

@@ -21,17 +21,18 @@ const headers = (token: string) => ({
   "content-type": "application/json",
 });
 
-async function login(gameId: string, code: string): Promise<string> {
+async function login(gameId: string, code: string): Promise<{ accessToken: string; refreshToken: string }> {
   const response = await json(`/v1/games/${gameId}/auth/exchange`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ authorizationCode: code }),
   });
   if (response.status !== 200) throw new Error(`login failed: ${JSON.stringify({ gameId, response })}`);
-  return (response.body as { accessToken: string }).accessToken;
+  return response.body as { accessToken: string; refreshToken: string };
 }
 
-const token = await login("demo", `smoke-${randomUUID()}`);
+const session = await login("demo", `smoke-${randomUUID()}`);
+const token = session.accessToken;
 const runId = `smoke-${randomUUID()}`;
 const submit = await json("/v1/games/demo/runs/generic:high_score", {
   method: "POST",
@@ -67,9 +68,17 @@ const around = await json("/v1/games/demo/leaderboards/high_score/around-me?radi
   headers: headers(token),
 });
 if (around.status !== 200) throw new Error(`around-me failed: ${JSON.stringify(around)}`);
+const me = await json("/v1/games/demo/leaderboards/high_score/me", { headers: headers(token) });
+if (me.status !== 200) throw new Error(`me failed: ${JSON.stringify(me)}`);
+const logout = await json("/v1/games/demo/auth/logout", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ refreshToken: session.refreshToken }),
+});
+if (logout.status !== 204) throw new Error(`logout failed: ${JSON.stringify(logout)}`);
 
 // File-based adapter: prove the loader pulled echo-v1 from the mounted volume.
-const echoToken = await login("echo-demo", `smoke-${randomUUID()}`);
+const echoToken = (await login("echo-demo", `smoke-${randomUUID()}`)).accessToken;
 const echoRunId = `smoke-${randomUUID()}`;
 const echoSubmit = await json("/v1/games/echo-demo/runs/echo-v1", {
   method: "POST",
