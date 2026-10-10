@@ -45,6 +45,8 @@ The server boots with an empty manifest. To access the admin dashboard, open `ht
 
 The dashboard lists games, loaded adapters, per-game health, and recent runs (no payload bodies), plus a Manifest editor that validates JSON against the schema and hot-reloads the runtime — no container restart required for adding, removing, or replacing games.
 
+Today the game page only renders a top-10 for **generic** adapters, so file-adapter titles (boards, players, auth flips) look empty even when SQLite has data. The Manifest editor is a JSON textarea. Make that UI useful without secrets: `ADMIN_DASHBOARD_PLAN.md`.
+
 If you mount a `games.json` file into the container read-only, the editor shows a banner and disables save; unset `BANTAM_CONFIG_FILE` and let the server manage `/data/games.json` to edit through the UI.
 
 ## Verification
