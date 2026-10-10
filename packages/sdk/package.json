@@ -1,7 +1,8 @@
 {
   "name": "@gamercury/bantam-sdk",
   "version": "0.1.0",
-  "private": true,
+  "description": "Browser TypeScript client for Bantam authoritative leaderboards (BantamClient).",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,12 +13,37 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bazokhan/bantam.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://bantam.trugraph.io/sdk/",
+  "bugs": {
+    "url": "https://github.com/bazokhan/bantam/issues"
+  },
+  "keywords": [
+    "bantam",
+    "leaderboard",
+    "game",
+    "gamercury"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "devDependencies": {
     "@types/node": "24.7.2",

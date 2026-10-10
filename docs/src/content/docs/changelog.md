@@ -25,6 +25,7 @@ This entry describes local implementation only. It does not claim a remote repos
 
 ## 0.1.0 — production wiring
 
+- Client SDK `@gamercury/bantam-sdk` is the public npm package (`packages/sdk`). Publish with `sdk-v*` tags via GitHub Actions trusted publishing (`publish-sdk.yml`, no `NPM_TOKEN`) or local `npm run sdk:publish`. The server package stays private.
 - Source published to a private GitHub repository at <https://github.com/bazokhan/bantam>.
 - Container image published to Docker Hub as [`bazokhan/bantam`](https://hub.docker.com/r/bazokhan/bantam). CI publishes the `latest` tag plus the short commit SHA on every push to `main`, and a versioned tag on each `v*` release tag.
 - Documentation site deployed to <https://bantam.trugraph.io> via Vercel, auto-deployed from `docs/` on every push to `main`.

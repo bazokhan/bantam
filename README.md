@@ -59,3 +59,15 @@ docker compose up -d
 Release lanes: format, lint, typecheck, test, build, openapi drift, adapter smoke, container end-to-end, backup/restore. A skipped required lane is a blocker.
 
 Configuration, recovery, deployment, adapter contract, API reference, and SDK details live in the `docs/` site (Astro Starlight, built locally). No production credentials are included here.
+
+Games install the client from npm: `npm install @gamercury/bantam-sdk`. Maintainers publish by pushing tag `sdk-v<semver>` (GitHub Actions trusted publishing, no `NPM_TOKEN`) or locally with `npm run sdk:publish`. Do not publish the server package. See https://bantam.trugraph.io/sdk/ (source: `docs/src/content/docs/sdk.md`).
+
+## Agent skill
+
+Reusable instructions for wiring any game (auth, adapters, `BantamClient`, secrets as paths only):
+
+```
+npx skills add bazokhan/bantam --skill bantam
+```
+
+Canonical files: `.agents/skills/bantam/SKILL.md` and `.agents/skills/bantam/reference.md`. Local fallback: `npx skills add D:/Gamercury/bantam --skill bantam`. List discoverable skills with `npx skills add D:/Gamercury/bantam -l`. Do not put passwords or tokens in the skill.

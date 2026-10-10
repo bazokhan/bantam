@@ -293,8 +293,8 @@ Bantam is structured so an agent can wire a game end-to-end without reading pros
 **Surface area** (machine-readable):
 
 - OpenAPI 3.0.3 spec at runtime: `GET /openapi.json`
-- Adapter contract TypeScript types: `@bantam/adapter-contract`
-- Generated SDK: `@gamercury/bantam-sdk` (`BantamClient`)
+- Adapter contract: `GameAdapterV1` in the server (file adapters in the game repo, not npm)
+- Client SDK (public npm): `@gamercury/bantam-sdk` (`BantamClient`) — `npm install @gamercury/bantam-sdk`
 - This site's typed reference: see [API and SDK](/reference/)
 
 **Action shapes** (one JSON file per surface):

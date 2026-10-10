@@ -34,6 +34,8 @@ Errors use `{ "error": { "code", "message", "requestId" } }`. Treat `401` as a r
 
 ## TypeScript SDK
 
+Install from the public registry (not a sibling `file:` path). Publish workflow: [SDK on npm](/sdk/).
+
 ```ts
 import { BantamClient, BrowserStorage } from "@gamercury/bantam-sdk";
 
