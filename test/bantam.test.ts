@@ -588,3 +588,397 @@ describe("admin auth + manifest edit", () => {
     }
   });
 });
+
+// Helpers used by the admin dashboard tests below.
+async function adminCookie(app: import("fastify").FastifyInstance): Promise<string> {
+  const reg = await app.inject({
+    method: "POST",
+    url: "/admin/register",
+    payload: "username=alice&password=hunter2hunter2&confirm=hunter2hunter2",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+  });
+  return reg.headers["set-cookie"]!.toString().split(";")[0]!;
+}
+
+function setDemoEnv(): void {
+  // The test `game()` helper uses `secretPrefix: "TEST"`, so required env
+  // keys are TEST_IDENTITY_SALT / TEST_SESSION_SECRET / TEST_CURSOR_SECRET.
+  process.env.TEST_IDENTITY_SALT = "test-identity-salt-32-chars-long";
+  process.env.TEST_SESSION_SECRET = "test-session-secret-32-chars-long";
+  process.env.TEST_CURSOR_SECRET = "test-cursor-secret-32-chars-long";
+}
+
+function clearDemoEnv(): void {
+  delete process.env.TEST_IDENTITY_SALT;
+  delete process.env.TEST_SESSION_SECRET;
+  delete process.env.TEST_CURSOR_SECRET;
+  delete process.env.TEST_PGS_CLIENT_ID;
+  delete process.env.TEST_PGS_CLIENT_SECRET;
+}
+
+describe("admin dashboard P0 — overview, game page, boards", () => {
+  it("overview counts games, players, and runs created today", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      // Seed a player + a run so the count is non-zero.
+      const login = await app.inject({
+        method: "POST",
+        url: "/v1/games/demo/auth/exchange",
+        payload: { authorizationCode: "p-overview" },
+      });
+      const token = login.json<{ accessToken: string }>().accessToken;
+      await app.inject({
+        method: "POST",
+        url: `/v1/games/demo/runs/${adapterIdFor(config())}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { runId: "run-overview-1", payload: { high_score: 5 } },
+      });
+      const page = await app.inject({ method: "GET", url: "/admin/", headers: { cookie } });
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toMatch(/class="v">1<\/div><div class="l">Games loaded/);
+      expect(page.body).toMatch(/class="v">1<\/div><div class="l">Players \(all games\)/);
+      expect(page.body).toMatch(/class="v">1<\/div><div class="l">Runs today \(UTC\)/);
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("game page iterates every adapter's boards and shows env presence", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const page = await app.inject({ method: "GET", url: "/admin/games/demo", headers: { cookie } });
+      expect(page.statusCode).toBe(200);
+      // Both boards in the test adapter are listed (not just the first).
+      expect(page.body).toMatch(/href="\/admin\/games\/demo\/boards\/high_score"/);
+      expect(page.body).toMatch(/href="\/admin\/games\/demo\/boards\/fastest_finish"/);
+      // env-var presence row uses each required key as the visible label.
+      expect(page.body).toMatch(/TEST_IDENTITY_SALT/);
+      expect(page.body).toMatch(/TEST_SESSION_SECRET/);
+      expect(page.body).toMatch(/TEST_CURSOR_SECRET/);
+      expect(page.body).toMatch(/present/);
+      // Auth badge shows the provider.
+      expect(page.body).toMatch(/development/);
+      // No raw env values leak into the page.
+      expect(page.body).not.toContain("test-identity-salt-32-chars-long");
+      expect(page.body).not.toContain("test-session-secret-32-chars-long");
+      expect(page.body).not.toContain("test-cursor-secret-32-chars-long");
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("board page lists scores from db.list (all_time + daily)", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const login = await app.inject({
+        method: "POST",
+        url: "/v1/games/demo/auth/exchange",
+        payload: { authorizationCode: "p-board" },
+      });
+      const token = login.json<{ accessToken: string }>().accessToken;
+      await app.inject({
+        method: "POST",
+        url: `/v1/games/demo/runs/${adapterIdFor(config())}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { runId: "run-board-0001", payload: { high_score: 42 } },
+      });
+      const page = await app.inject({
+        method: "GET",
+        url: "/admin/games/demo/boards/high_score",
+        headers: { cookie },
+      });
+      expect(page.statusCode).toBe(200);
+      // Period key is now in the table footer.
+      expect(page.body).toMatch(/period all_time/);
+      expect(page.body).toMatch(/all_time/);
+      // Score row.
+      expect(page.body).toMatch(/42/);
+      // Empty-state for an unknown board.
+      const missing = await app.inject({
+        method: "GET",
+        url: "/admin/games/demo/boards/no-such-board",
+        headers: { cookie },
+      });
+      expect(missing.statusCode).toBe(404);
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+});
+
+describe("admin dashboard P1 — players list and delete", () => {
+  it("lists players with truncated id and provider, and delete removes them", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      // Seed two players.
+      await app.inject({
+        method: "POST",
+        url: "/v1/games/demo/auth/exchange",
+        payload: { authorizationCode: "p-list-a" },
+      });
+      await app.inject({
+        method: "POST",
+        url: "/v1/games/demo/auth/exchange",
+        payload: { authorizationCode: "p-list-b" },
+      });
+      const page = await app.inject({
+        method: "GET",
+        url: "/admin/games/demo/players",
+        headers: { cookie },
+      });
+      expect(page.statusCode).toBe(200);
+      // Two delete disclosures (one per player); the button is revealed only
+      // after the operator expands the disclosure so we look for the summary.
+      expect((page.body.match(/<summary>Delete player<\/summary>/g) ?? []).length).toBe(2);
+      // Provider badge shows the known label.
+      expect(page.body).toMatch(/development/);
+      // Pick the first player's id from the rendered row (truncated, 8 chars).
+      const idMatch = page.body.match(/<code title="(p_[0-9a-f]+)">(p_[0-9a-f]{0,8})<\/code>/);
+      expect(idMatch).toBeTruthy();
+      const fullId = idMatch![1]!;
+      const del = await app.inject({
+        method: "POST",
+        url: "/admin/games/demo/players/delete",
+        payload: `playerId=${encodeURIComponent(fullId)}`,
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+      });
+      expect(del.statusCode).toBe(302);
+      // One fewer player now.
+      const after = await app.inject({
+        method: "GET",
+        url: "/admin/games/demo/players",
+        headers: { cookie },
+      });
+      expect((after.body.match(/<summary>Delete player<\/summary>/g) ?? []).length).toBe(1);
+      // Public endpoint confirms deletion on the leaderboard side.
+      const board = await app.inject({ method: "GET", url: "/v1/games/demo/leaderboards/high_score" });
+      expect(board.json<{ entries: unknown[] }>().entries).toEqual([]);
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("rejects unauthenticated POST /admin/games/:gameId/players/delete", async () => {
+    const dataDir = temp();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/admin/games/demo/players/delete",
+        payload: "playerId=anything",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      });
+      expect(blocked.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("admin dashboard P2 — settings form, prod guard, rollback", () => {
+  it("form path round-trips and reloads without dropping other games", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    // Direct adminDb + per-game SQLite at the test's tempdir so we don't
+    // share /data/admin.sqlite across tests (Windows maps /data → D:/data).
+    process.env.BANTAM_DATA_DIR = dataDir;
+    // Form path mutates an existing manifest; pre-write one with the demo game
+    // so the reload doesn't drop it after the save.
+    writeFileSync(
+      join(dataDir, "games.json"),
+      JSON.stringify({
+        environment: "development",
+        games: [
+          {
+            id: "demo",
+            displayName: "Demo",
+            adapters: [
+              { kind: "generic", boards: [{ id: "high_score", direction: "higher", period: "all_time" }] },
+            ],
+            secretPrefix: "TEST",
+            gracePeriodHours: 24,
+            authProvider: "development",
+          },
+        ],
+      }),
+    );
+    const app = await buildApp(loadConfig(join(dataDir, "games.json")), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      // Flip gracePeriodHours + displayName via the form (not Advanced JSON).
+      const save = await app.inject({
+        method: "POST",
+        url: "/admin/manifest",
+        payload: [
+          `environment=development`,
+          `game[0].id=demo`,
+          `game[0].displayName=Demo Renamed`,
+          `game[0].authProvider=development`,
+          `game[0].gracePeriodHours=48`,
+          `game[0].secretPrefix=TEST`,
+        ].join("&"),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+      });
+      expect(save.statusCode).toBe(302);
+      const page = await app.inject({ method: "GET", url: "/admin/games/demo", headers: { cookie } });
+      expect(page.body).toMatch(/Demo Renamed/);
+      expect(page.body).toMatch(/48 hours/);
+    } finally {
+      delete process.env.BANTAM_DATA_DIR;
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("rejects production + development auth at the reload callback", async () => {
+    // Boot in production by writing a manifest that declares production +
+    // pgs-v2, then attempt a form save that flips auth to development. The
+    // boot-rule guard fires in the reload callback, the form returns 500,
+    // and the on-disk manifest is rolled back to the prior version.
+    const dataDir = temp();
+    setDemoEnv();
+    // Direct the admin database and per-game SQLite files at the test's
+    // tempdir so the test cannot leak state to /data (the default fallback).
+    process.env.BANTAM_DATA_DIR = dataDir;
+    const initial = JSON.stringify({
+      environment: "production",
+      games: [
+        {
+          id: "demo",
+          displayName: "Demo",
+          adapters: [
+            { kind: "generic", boards: [{ id: "high_score", direction: "higher", period: "all_time" }] },
+          ],
+          secretPrefix: "BANTAM_GAME_DEMO",
+          gracePeriodHours: 24,
+          authProvider: "pgs-v2",
+        },
+      ],
+    });
+    writeFileSync(join(dataDir, "games.json"), initial);
+    // Production + pgs-v2 also needs PGS env. Set stubs so reload doesn't
+    // also fail on missing secrets — the test isolates the auth guard.
+    process.env.BANTAM_GAME_DEMO_IDENTITY_SALT = "test-identity-salt-32-chars-long";
+    process.env.BANTAM_GAME_DEMO_SESSION_SECRET = "test-session-secret-32-chars-long";
+    process.env.BANTAM_GAME_DEMO_CURSOR_SECRET = "test-cursor-secret-32-chars-long";
+    process.env.BANTAM_GAME_DEMO_PGS_CLIENT_ID = "test-pgs-client-id-32-chars-x";
+    process.env.BANTAM_GAME_DEMO_PGS_CLIENT_SECRET = "test-pgs-client-secret-32-chars-x";
+    const app = await buildApp(loadConfig(join(dataDir, "games.json")), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const save = await app.inject({
+        method: "POST",
+        url: "/admin/manifest",
+        payload: [
+          `environment=production`,
+          `game[0].id=demo`,
+          `game[0].displayName=Demo`,
+          `game[0].authProvider=development`,
+          `game[0].gracePeriodHours=24`,
+          `game[0].secretPrefix=BANTAM_GAME_DEMO`,
+        ].join("&"),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+      });
+      expect(save.statusCode).toBe(500);
+      expect(save.body).toMatch(/rolled back/);
+      // Disk reverted to the original auth field.
+      const round = readFileSync(join(dataDir, "games.json"), "utf8");
+      expect(round).toMatch(/"authProvider":\s*"pgs-v2"/);
+    } finally {
+      delete process.env.BANTAM_DATA_DIR;
+      delete process.env.BANTAM_GAME_DEMO_IDENTITY_SALT;
+      delete process.env.BANTAM_GAME_DEMO_SESSION_SECRET;
+      delete process.env.BANTAM_GAME_DEMO_CURSOR_SECRET;
+      delete process.env.BANTAM_GAME_DEMO_PGS_CLIENT_ID;
+      delete process.env.BANTAM_GAME_DEMO_PGS_CLIENT_SECRET;
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("hides the development auth option when environment is production", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    process.env.BANTAM_DATA_DIR = dataDir;
+    process.env.BANTAM_GAME_DEMO_IDENTITY_SALT = "test-identity-salt-32-chars-long";
+    process.env.BANTAM_GAME_DEMO_SESSION_SECRET = "test-session-secret-32-chars-long";
+    process.env.BANTAM_GAME_DEMO_CURSOR_SECRET = "test-cursor-secret-32-chars-long";
+    process.env.BANTAM_GAME_DEMO_PGS_CLIENT_ID = "test-pgs-client-id-32-chars-x";
+    process.env.BANTAM_GAME_DEMO_PGS_CLIENT_SECRET = "test-pgs-client-secret-32-chars-x";
+    const initial = JSON.stringify({
+      environment: "production",
+      games: [
+        {
+          id: "demo",
+          displayName: "Demo",
+          adapters: [
+            { kind: "generic", boards: [{ id: "high_score", direction: "higher", period: "all_time" }] },
+          ],
+          secretPrefix: "BANTAM_GAME_DEMO",
+          gracePeriodHours: 24,
+          authProvider: "pgs-v2",
+        },
+      ],
+    });
+    writeFileSync(join(dataDir, "games.json"), initial);
+    const app = await buildApp(loadConfig(join(dataDir, "games.json")), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const page = await app.inject({ method: "GET", url: "/admin/manifest", headers: { cookie } });
+      expect(page.statusCode).toBe(200);
+      // The select only offers pgs-v2 (no development option rendered).
+      const authSelect = page.body.match(/<select name="game\[0\]\.authProvider">([\s\S]*?)<\/select>/);
+      expect(authSelect).toBeTruthy();
+      expect(authSelect![1]).toMatch(/value="pgs-v2"/);
+      expect(authSelect![1]).not.toMatch(/value="development"/);
+      // Production warning is rendered at the top of the page.
+      expect(page.body).toMatch(/Production environment:.*rejected/);
+    } finally {
+      delete process.env.BANTAM_DATA_DIR;
+      delete process.env.BANTAM_GAME_DEMO_IDENTITY_SALT;
+      delete process.env.BANTAM_GAME_DEMO_SESSION_SECRET;
+      delete process.env.BANTAM_GAME_DEMO_CURSOR_SECRET;
+      delete process.env.BANTAM_GAME_DEMO_PGS_CLIENT_ID;
+      delete process.env.BANTAM_GAME_DEMO_PGS_CLIENT_SECRET;
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+});
+
+describe("admin dashboard P3 — folded into /admin/health", () => {
+  it("health shows env completeness and CORS origin list", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    process.env.BANTAM_ALLOWED_ORIGINS = "https://example.com, https://other.example";
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const page = await app.inject({ method: "GET", url: "/admin/health", headers: { cookie } });
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toMatch(/env ok/);
+      expect(page.body).toMatch(/https:\/\/example\.com/);
+      expect(page.body).toMatch(/https:\/\/other\.example/);
+    } finally {
+      delete process.env.BANTAM_ALLOWED_ORIGINS;
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+});

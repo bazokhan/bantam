@@ -9,6 +9,7 @@ import Fastify, { LogController, type FastifyInstance } from "fastify";
 import { Registry, collectDefaultMetrics, Counter, Histogram } from "prom-client";
 import { loadAdaptersForGame, listLoadedAdapters } from "./adapters/registry.js";
 import { ManifestStore } from "./admin/manifest-store.js";
+import { enforceBootRules, resolveGameSecrets } from "./config.js";
 import { AdminDatabase } from "./db/admin-database.js";
 import { providerFor } from "./auth/provider.js";
 import { issueSession, revokeSession, rotateSession, verifyAccess } from "./auth/sessions.js";
@@ -431,12 +432,30 @@ export async function buildApp(
   const adminDb = new AdminDatabase(join(config.dataDir, "admin.sqlite"), migrationsDirectory);
   const manifestStore = new ManifestStore(process.env.BANTAM_CONFIG_FILE, config.dataDir);
   const { registerAdmin } = await import("./admin/routes.js");
+  // Hide every /admin/* route from the OpenAPI document. The admin UI is
+  // cookie-session-gated and serves an HTML shell, not an API; documenting
+  // it there exposes session paths and lets SDK generators wire things up
+  // against endpoints only the operator should see.
+  app.addHook("onRoute", (route) => {
+    if (route.url.startsWith("/admin")) {
+      route.schema = { ...route.schema, hide: true };
+    }
+  });
   await registerAdmin(
     app,
     adminDb,
     registry.map,
-    async (games) => {
-      const result = await registry.replaceAll(games, {
+    async (manifest) => {
+      // Re-run the same boot invariants the initial loader enforces, so a
+      // manifest save can't slip past a rule (e.g. production + development
+      // auth) that boot would have rejected.
+      // The manifest schema leaves `adapters` as `unknown[]` for schema reasons
+      // (each adapter kind is validated separately); the store guarantees
+      // they are real AdapterSpec by the time we get here.
+      const games = manifest.games as unknown as Parameters<typeof enforceBootRules>[1];
+      enforceBootRules(manifest.environment, games);
+      const enriched = games.map((g) => resolveGameSecrets(g));
+      const result = await registry.replaceAll(enriched, {
         dataDir: config.dataDir,
         migrationsDirectory,
       });

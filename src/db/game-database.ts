@@ -6,6 +6,12 @@ import type { BoardDefinition, DerivedBoardValue } from "../types.js";
 import { applyMigrations } from "./migrations.js";
 
 export type Player = { id: string; displayName: string };
+export type PlayerRow = {
+  id: string;
+  provider: "pgs-v2" | "development";
+  displayName: string;
+  createdAt: number;
+};
 export type SessionRow = {
   token_hash: string;
   player_id: string;
@@ -257,6 +263,21 @@ export class GameDatabase {
     return this.db
       .transaction(() => this.db.prepare("DELETE FROM players WHERE id=?").run(playerId).changes)
       .immediate();
+  }
+
+  // Admin-only listing. Returns the player id, display name, provider label,
+  // and creation timestamp. Order is most-recent first so operators see
+  // fresh signups at the top of the page.
+  listPlayers(limit = 200): PlayerRow[] {
+    return this.db
+      .prepare(
+        "SELECT id, provider, display_name displayName, created_at createdAt FROM players ORDER BY created_at DESC LIMIT ?",
+      )
+      .all(limit) as PlayerRow[];
+  }
+
+  countPlayers(): number {
+    return (this.db.prepare("SELECT count(*) value FROM players").pluck().get() as number) ?? 0;
   }
 
   recentRuns(

@@ -15,8 +15,7 @@ import {
 } from "../auth/admin.js";
 import type { AdminDatabase } from "../db/admin-database.js";
 import { BantamError } from "../errors.js";
-import type { LeaderboardEntry } from "../db/game-database.js";
-import type { BoardDefinition, GenericAdapterSpec, RuntimeGame } from "../types.js";
+import type { AdapterSpec, BoardDefinition, RuntimeGame } from "../types.js";
 import {
   clearCookieValue,
   cookieHook,
@@ -24,20 +23,44 @@ import {
   serializeCookie,
   sessionCookieMiddleware,
 } from "./middleware.js";
-import { ManifestStore } from "./manifest-store.js";
-import type { ManifestFile } from "./manifest-store.js";
+import { ManifestStore, type ManifestFile } from "./manifest-store.js";
 import {
   badge,
   banner,
+  confirmAction,
   errorList,
   escapeHtml,
+  field,
+  kpi,
+  pageHead,
   publicShell,
-  renderKv,
   renderTable,
   shell,
 } from "./templates.js";
 
-export type ReloadRuntimes = (games: RuntimeGame[]) => Promise<{ added: string[]; removed: string[] }>;
+export type ReloadRuntimes = (manifest: ManifestFile) => Promise<{ added: string[]; removed: string[] }>;
+
+// Required env keys per game. Booleans only — never echo the value back to
+// the operator, even in error messages. The full key names are documented in
+// the SKILL so this list stays authoritative.
+function requiredEnvKeys(prefix: string, authProvider: RuntimeGame["authProvider"]): string[] {
+  const base = [`${prefix}_IDENTITY_SALT`, `${prefix}_SESSION_SECRET`, `${prefix}_CURSOR_SECRET`];
+  if (authProvider === "pgs-v2") base.push(`${prefix}_PGS_CLIENT_ID`, `${prefix}_PGS_CLIENT_SECRET`);
+  return base;
+}
+
+function envPresence(keys: readonly string[]): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const key of keys) out[key] = Boolean(process.env[key]) && (process.env[key] ?? "").length >= 16;
+  return out;
+}
+
+// First 8 chars of the SHA-256(player id) for display. Operators don't need the
+// full id to disambiguate two players; the full id is only revealed inside
+// the confirm form for delete actions.
+function truncateId(id: string): string {
+  return id.length <= 8 ? id : id.slice(0, 8);
+}
 
 export async function registerAdmin(
   app: FastifyInstance,
@@ -62,14 +85,6 @@ export async function registerAdmin(
 
   const countAdmins = () => adminDb.countAdmins();
 
-  // Decide the Secure flag for the session cookie. Browsers refuse Secure
-  // cookies on plain HTTP, so we must not set Secure when the request is
-  // HTTP (even behind a TLS-terminating proxy, request.protocol still reads
-  // the inner scheme unless trustProxy is enabled — keep the explicit env
-  // override as the supported way to lock it down).
-  // - BANTAM_ADMIN_COOKIE_SECURE=true  → always Secure (real production)
-  // - BANTAM_ADMIN_COOKIE_SECURE=false → never Secure (local HTTP testing)
-  // - unset                            → Secure iff the request is HTTPS
   const cookieSecureFor = (request: { protocol: string }): boolean => {
     const flag = process.env.BANTAM_ADMIN_COOKIE_SECURE;
     if (flag === "true") return true;
@@ -83,40 +98,66 @@ export async function registerAdmin(
     const url = _request.url;
     const next = new URL(url, "http://x").searchParams.get("next") ?? "/admin/";
     const opened = countAdmins() === 0;
-    // When no admin exists yet, render a registration form (POSTs to
-    // /admin/register), NOT a login form. Submitting the login form before
-    // any admin exists is a dead-end — the login handler has no row to verify
-    // against and replies with "incorrect username or password", which the
-    // user reads as a registration failure. Show the registration form up
-    // front when opened=true.
     if (opened) {
-      const body = `<div class="card">
-        <h1>Create the first admin</h1>
-        ${banner("No admin accounts exist yet. This is the only moment registration is open. Once you create the first admin, future visitors must log in.", "warn")}
-        <form class="bantam" method="post" action="/admin/register">
-          <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"></label>
-          <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-          <label class="pw-row">Confirm password <span class="pw-wrap"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-          <button type="submit">Create admin</button>
-        </form>
+      const body = `<div class="auth-card">${pageHead(
+        "Create the first admin",
+        "No admin accounts exist yet. This is the only moment registration is open.",
+      )}${banner(
+        "Once you create the first admin, future visitors must log in. Choose a long password; you cannot recover this account later.",
+        "warn",
+      )}
+      <form class="form" method="post" action="/admin/register">
+        ${field(
+          "Username",
+          '<input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" autofocus>',
+          "Letters, digits, dot, underscore, dash. Up to 64 chars.",
+          true,
+        )}
+        ${field(
+          "Password",
+          `<span class="password-row"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+          "At least 8 characters.",
+          true,
+        )}
+        ${field(
+          "Confirm password",
+          `<span class="password-row"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+          "",
+          true,
+        )}
+        <div class="form-actions">
+          <button type="submit" class="btn primary">Create admin</button>
+        </div>
+      </form>
+      <p class="meta">Already registered? <a href="/admin/login">Log in</a>.</p>
       </div>`;
       return reply.type("text/html").send(publicShell("First admin", body));
     }
-    const body = `<div class="card">
-        <h1>Log in</h1>
-        <form class="bantam" method="post" action="/admin/login${next !== "/admin/" ? `?next=${encodeURIComponent(next)}` : ""}">
-          <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"></label>
-          <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-          <button type="submit">Log in</button>
-        </form>
+    const action = `/admin/login${next !== "/admin/" ? `?next=${encodeURIComponent(next)}` : ""}`;
+    const body = `<div class="auth-card">${pageHead("Log in", "Sign in with the operator account that was created at first boot.")}
+      <form class="form" method="post" action="${action}">
+        ${field(
+          "Username",
+          '<input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" autofocus>',
+          "",
+          true,
+        )}
+        ${field(
+          "Password",
+          `<span class="password-row"><input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+          "",
+          true,
+        )}
+        <div class="form-actions">
+          <button type="submit" class="btn primary">Log in</button>
+        </div>
+      </form>
       </div>`;
     return reply.type("text/html").send(publicShell("Login", body));
   });
 
   app.post("/admin/login", async (request, reply) => {
     const body = request.body as Record<string, unknown> | undefined;
-    // Trim and normalize to make typos harder: collapse case so "Alice" and
-    // "alice" hit the same row.
     const usernameRaw = typeof body?.["username"] === "string" ? body["username"] : "";
     const username = parseUsername(usernameRaw.toLowerCase());
     const password = validatePassword(typeof body?.["password"] === "string" ? body["password"] : "");
@@ -126,18 +167,26 @@ export async function registerAdmin(
       if (!v.startsWith("/admin/") && !v.startsWith("/admin")) return "/admin/";
       return v;
     })();
-    // Always re-render the login form so the user can correct typos without
-    // losing their input. The server-side error message is the only signal
-    // telling them what went wrong; clearing the form on rejection is hostile.
+    const action = `/admin/login${next !== "/admin/" ? `?next=${encodeURIComponent(next)}` : ""}`;
     const renderError = (title: string, message: string, code: number) => {
-      const body = `<div class="card">
-          <h1>${escapeHtml(title)}</h1>
-          ${banner(escapeHtml(message), "bad")}
-          <form class="bantam" method="post" action="/admin/login${next !== "/admin/" ? `?next=${encodeURIComponent(next)}` : ""}">
-            <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" value="${escapeHtml(usernameRaw)}"></label>
-            <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-            <button type="submit">Log in</button>
-          </form>
+      const body = `<div class="auth-card">${pageHead(title, "")}${banner(escapeHtml(message), "bad")}
+        <form class="form" method="post" action="${action}">
+          ${field(
+            "Username",
+            `<input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" value="${escapeHtml(usernameRaw)}">`,
+            "",
+            true,
+          )}
+          ${field(
+            "Password",
+            `<span class="password-row"><input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+            "",
+            true,
+          )}
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Log in</button>
+          </div>
+        </form>
         </div>`;
       return reply.code(code).type("text/html").send(publicShell("Login", body));
     };
@@ -168,16 +217,38 @@ export async function registerAdmin(
     if (countAdmins() > 0) {
       return reply.code(404).type("text/plain").send("registration closed");
     }
-    const body = `
-      <div class="card">
-        <h1>Create the first admin</h1>
-        ${banner("No admin accounts exist yet. This is the only moment registration is open. Once you create the first admin, future visitors must log in.", "warn")}
-        <form class="bantam" method="post" action="/admin/register">
-          <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64"><span class="muted">Letters, digits, dot, underscore, dash. Up to 64 chars.</span></label>
-          <label class="pw-row">Password <span class="muted">At least 8 characters.</span><span class="pw-wrap"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-          <label class="pw-row">Confirm password <span class="pw-wrap"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-          <button type="submit">Create admin</button>
-        </form>
+    const body = `<div class="auth-card">${pageHead(
+      "Create the first admin",
+      "No admin accounts exist yet. This is the only moment registration is open.",
+    )}
+      ${banner(
+        "Once you create the first admin, future visitors must log in. Choose a long password; you cannot recover this account later.",
+        "warn",
+      )}
+      <form class="form" method="post" action="/admin/register">
+        ${field(
+          "Username",
+          '<input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" autofocus>',
+          "Letters, digits, dot, underscore, dash. Up to 64 chars.",
+          true,
+        )}
+        ${field(
+          "Password",
+          `<span class="password-row"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+          "At least 8 characters.",
+          true,
+        )}
+        ${field(
+          "Confirm password",
+          `<span class="password-row"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+          "",
+          true,
+        )}
+        <div class="form-actions">
+          <button type="submit" class="btn primary">Create admin</button>
+        </div>
+      </form>
+      <p class="meta">Already registered? <a href="/admin/login">Log in</a>.</p>
       </div>`;
     return reply.type("text/html").send(publicShell("Register", body));
   });
@@ -198,16 +269,31 @@ export async function registerAdmin(
         .send(
           publicShell(
             "Register",
-            `<div class="card">
-              <h1>Registration failed</h1>
-              ${banner(message, "bad")}
-              <form class="bantam" method="post" action="/admin/register">
-                <label>Username <input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" value="${escapeHtml(usernameRaw)}"></label>
-                <label class="pw-row">Password <span class="pw-wrap"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-                <label class="pw-row">Confirm password <span class="pw-wrap"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show password" data-hide-label="Hide password">Show</button></span></label>
-                <button type="submit">Create admin</button>
-              </form>
-            </div>`,
+            `<div class="auth-card">${pageHead("Registration failed", "")}${banner(escapeHtml(message), "bad")}
+            <form class="form" method="post" action="/admin/register">
+              ${field(
+                "Username",
+                `<input type="text" name="username" autocomplete="username" required minlength="1" maxlength="64" value="${escapeHtml(usernameRaw)}">`,
+                "",
+                true,
+              )}
+              ${field(
+                "Password",
+                `<span class="password-row"><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+                "",
+                true,
+              )}
+              ${field(
+                "Confirm password",
+                `<span class="password-row"><input type="password" name="confirm" autocomplete="new-password" required minlength="8" maxlength="256"><button type="button" class="pw-toggle" aria-label="Show password" data-show-label="Show" data-hide-label="Hide">Show</button></span>`,
+                "",
+                true,
+              )}
+              <div class="form-actions">
+                <button type="submit" class="btn primary">Create admin</button>
+              </div>
+            </form>
+          </div>`,
           ),
         );
     if (!username || !password) {
@@ -245,221 +331,315 @@ export async function registerAdmin(
     return reply.header("set-cookie", clearCookieValue(ADMIN_COOKIE_NAME)).redirect("/admin/login", 302);
   });
 
-  // ─── Manifest editor ─────────────────────────────────────────────────────────
-
-  app.get("/admin/manifest", async (_request, reply) => {
-    const loaded = manifestStore.load();
-    const url = _request.url;
-    const justSaved = new URL(url, "http://x").searchParams.get("saved") === "1";
-    if (!loaded.ok) {
-      return reply
-        .type("text/html")
-        .send(
-          shell(
-            "Manifest",
-            `<h1>Manifest</h1>${banner(`Cannot read manifest: ${escapeHtml(loaded.error)}`, "bad")}`,
-            nav("/admin/manifest"),
-          ),
-        );
-    }
-    const bannerHtml = justSaved
-      ? banner("Saved. Runtime reloaded.", "ok")
-      : loaded.writable
-        ? ""
-        : banner(
-            `Manifest path ${escapeHtml(loaded.path)} is read-only. The editor below is disabled. To edit via the UI, leave BANTAM_CONFIG_FILE unset and mount /data writable.`,
-            "warn",
-          );
-    const editorDisabled = loaded.writable ? "" : "disabled";
-    const body = `
-      <h1>Manifest</h1>
-      <p class="muted">Source: <code>${escapeHtml(loaded.path)}</code> · ${badge(loaded.writable ? "writable" : "read-only", loaded.writable ? "ok" : "warn")}</p>
-      ${bannerHtml}
-      <form class="bantam" method="post" action="/admin/manifest">
-        <label>Manifest JSON <textarea name="manifest" spellcheck="false" ${editorDisabled}>${escapeHtml(loaded.raw)}</textarea></label>
-        <button type="submit" ${editorDisabled}>Save & reload</button>
-      </form>
-      <p class="muted">Top-level <code>environment</code> and an array of <code>games</code>. Each game has <code>id</code>, <code>displayName</code>, <code>adapters</code> (kind <code>generic</code> with <code>boards</code> or kind <code>file</code> with <code>source</code>), <code>secretPrefix</code>, <code>gracePeriodHours</code>, and <code>authProvider</code>.</p>
-      <p class="muted">Per-game secrets must be supplied as env vars: <code>\${secretPrefix}_IDENTITY_SALT</code>, <code>_SESSION_SECRET</code>, <code>_CURSOR_SECRET</code>, plus <code>_PGS_CLIENT_ID</code> / <code>_PGS_CLIENT_SECRET</code> for <code>pgs-v2</code>. Restart the container after changing them.</p>`;
-    return reply.type("text/html").send(shell("Manifest", body, nav("/admin/manifest")));
-  });
-
-  app.post("/admin/manifest", async (request, reply) => {
-    const body = request.body as Record<string, unknown> | undefined;
-    const manifestText = typeof body?.["manifest"] === "string" ? body["manifest"] : "";
-    if (!manifestText.trim()) {
-      return reply
-        .code(400)
-        .type("text/html")
-        .send(
-          shell(
-            "Manifest",
-            `<h1>Manifest</h1>${banner("Manifest body was empty.", "bad")}`,
-            nav("/admin/manifest"),
-          ),
-        );
-    }
-    const result = manifestStore.save(manifestText);
-    if (!result.ok) {
-      return reply
-        .code(400)
-        .type("text/html")
-        .send(
-          shell(
-            "Manifest",
-            `<h1>Manifest</h1>${errorList(result.errors)}<p><a href="/admin/manifest">Back</a></p>`,
-            nav("/admin/manifest"),
-          ),
-        );
-    }
-    const manifest: ManifestFile = result.manifest;
-    // Reload runtimes from the validated manifest. The reload callback in app.ts
-    // re-opens per-game DBs and rebuilds adapter maps based on the new config.
-    const runtimeGames: RuntimeGame[] = manifest.games.map((g) => ({
-      id: g.id,
-      displayName: g.displayName,
-      adapters: g.adapters as never,
-      secretPrefix: g.secretPrefix,
-      gracePeriodHours: g.gracePeriodHours,
-      authProvider: g.authProvider,
-      identitySalt: "", // Resolved by env vars when the game runtime is built.
-      sessionSecret: "",
-      cursorSecret: "",
-    }));
-    // Resolve secrets from env via a helper that reads process.env. This
-    // keeps the editor decoupled from the runtime config loader.
-    const enriched = runtimeGames.map((g) => resolveGameSecrets(g));
-    try {
-      await reloadRuntimes(enriched);
-    } catch (error) {
-      return reply
-        .code(500)
-        .type("text/html")
-        .send(
-          shell(
-            "Manifest",
-            `<h1>Manifest</h1>${banner(`Saved manifest to disk but runtime reload failed: ${escapeHtml(String(error))}`, "bad")}`,
-            nav("/admin/manifest"),
-          ),
-        );
-    }
-    return reply.redirect("/admin/manifest?saved=1", 302);
-  });
-
-  // ─── Existing read-only pages ─────────────────────────────────────────────────
+  // ─── Overview ────────────────────────────────────────────────────────────────
 
   app.get("/admin/", async (_request, reply) => {
     const games = [...runtimes.values()];
-    const body =
-      games.length === 0
-        ? `
-        <h1>Bantam Admin</h1>
-        ${banner('No games loaded yet. <a href="/admin/manifest">Open Manifest</a> to create your first game.', "warn")}
-        <p class="muted">Read-only operational view. The server is healthy and waiting for a manifest.</p>
-        <ul>
-          <li><a href="/admin/manifest">Manifest</a> — edit and apply games.json.</li>
-          <li><a href="/admin/adapters">Adapters</a> — loaded implementations and which games reference them.</li>
-          <li><a href="/admin/health">Health</a> — per-game readiness and adapter coverage.</li>
-          <li><a href="/openapi.json">OpenAPI spec</a> — JSON, all routes.</li>
-        </ul>`
-        : `
-        <h1>Bantam Admin</h1>
-        <p class="muted">Read-only operational view. ${escapeHtml(String(games.length))} game(s) loaded.</p>
-        <ul>
-          <li><a href="/admin/games">Games</a> — manifest, boards, recent runs.</li>
-          <li><a href="/admin/adapters">Adapters</a> — loaded implementations and which games reference them.</li>
-          <li><a href="/admin/health">Health</a> — per-game readiness and adapter coverage.</li>
-          <li><a href="/admin/manifest">Manifest</a> — edit or replace games.json.</li>
-          <li><a href="/openapi.json">OpenAPI spec</a> — JSON, all routes.</li>
-        </ul>`;
+    const totals = {
+      games: games.length,
+      players: games.reduce((sum, runtime) => sum + runtime.db.countPlayers(), 0),
+      runsToday: games.reduce((sum, runtime) => {
+        const today = new Date().toISOString().slice(0, 10);
+        // Cheap approximation: sum recent runs created today. We re-use the
+        // existing `recentRuns` listing rather than adding a new query.
+        return (
+          sum +
+          runtime.db.recentRuns(200).filter((run) => run.createdAt.toISOString().slice(0, 10) === today)
+            .length
+        );
+      }, 0),
+    };
+    const gameCards = games.length
+      ? `<div class="card-grid">${games
+          .map((runtime) => {
+            const ready = runtime.db.ready();
+            return `<a class="card compact" href="/admin/games/${escapeHtml(runtime.game.id)}" style="text-decoration:none;color:inherit;display:block">
+          <div class="page-head" style="margin-bottom:0.5rem">
+            <div>
+              <h2 style="margin-bottom:0.15rem">${escapeHtml(runtime.game.displayName)}</h2>
+              <div class="muted"><code>${escapeHtml(runtime.game.id)}</code></div>
+            </div>
+          </div>
+          <div class="btn-row">
+            ${badge(runtime.game.authProvider)}
+            ${badge(ready ? "ready" : "starting", ready ? "ok" : "bad")}
+            <span class="muted">${runtime.adapters.size} adapter${runtime.adapters.size === 1 ? "" : "s"} · ${runtime.db.countPlayers()} player${runtime.db.countPlayers() === 1 ? "" : "s"}</span>
+          </div>
+        </a>`;
+          })
+          .join("")}</div>`
+      : banner("No games loaded yet.", "warn", "Get started");
+    const body = `${pageHead(
+      "Overview",
+      games.length
+        ? `${games.length} game${games.length === 1 ? "" : "s"} loaded. Pick one to inspect boards, players, and runs.`
+        : "Boot the operator dashboard.",
+      `<a class="btn secondary" href="/admin/manifest">Manifest editor</a>`,
+    )}
+      <div class="kpis">
+        ${kpi("Games loaded", totals.games)}
+        ${kpi("Players (all games)", totals.players)}
+        ${kpi("Runs today (UTC)", totals.runsToday)}
+        ${kpi(
+          "Adapters loaded",
+          games.reduce((s, r) => s + r.adapters.size, 0),
+        )}
+      </div>
+      <h2 style="margin-top:1.5rem">Games</h2>
+      ${gameCards}`;
     return reply.type("text/html").send(shell("Overview", body, nav("/admin/")));
   });
 
+  // ─── Games list ──────────────────────────────────────────────────────────────
+
   app.get("/admin/games", async (_request, reply) => {
-    const rows = [...runtimes.entries()].map(([id, runtime]) => {
-      const ready = runtime.db.ready();
-      return [
-        `<a href="/admin/games/${escapeHtml(id)}">${escapeHtml(id)}</a>`,
-        escapeHtml(runtime.game.displayName),
-        String(runtime.adapters.size),
-        badge(ready ? "ready" : "starting", ready ? "ok" : "bad"),
-        `<a href="/admin/games/${escapeHtml(id)}/runs">runs</a>`,
-      ];
-    });
-    const body = `<h1>Games</h1>${renderTable(["id", "display name", "adapters", "db", ""], rows)}`;
+    const rows: { html: string; label: string; numeric?: boolean }[][] = [...runtimes.entries()].map(
+      ([id, runtime]) => {
+        const ready = runtime.db.ready();
+        return [
+          { html: `<a href="/admin/games/${escapeHtml(id)}">${escapeHtml(id)}</a>`, label: "id" },
+          { html: escapeHtml(runtime.game.displayName), label: "display name" },
+          { html: badge(runtime.game.authProvider), label: "auth" },
+          { html: String(runtime.adapters.size), label: "adapters", numeric: true },
+          { html: String(runtime.db.countPlayers()), label: "players", numeric: true },
+          { html: badge(ready ? "ready" : "starting", ready ? "ok" : "bad"), label: "db" },
+          {
+            html: `<div class="row-actions">
+              <a class="btn ghost small" href="/admin/games/${escapeHtml(id)}/boards">Boards</a>
+              <a class="btn ghost small" href="/admin/games/${escapeHtml(id)}/players">Players</a>
+              <a class="btn ghost small" href="/admin/games/${escapeHtml(id)}/runs">Runs</a>
+            </div>`,
+            label: "actions",
+          },
+        ];
+      },
+    );
+    const body = `${pageHead(
+      "Games",
+      "Every game loaded from the manifest. Open one to inspect boards, players, and recent runs.",
+    )}${renderTable(["id", "display name", "auth", "adapters", "players", "db", "actions"], rows)}`;
     return reply.type("text/html").send(shell("Games", body, nav("/admin/games")));
   });
+
+  // ─── Game detail ─────────────────────────────────────────────────────────────
 
   app.get<{ Params: { gameId: string } }>("/admin/games/:gameId", async (request, reply) => {
     const runtime = runtimes.get(request.params.gameId);
     if (!runtime) return reply.code(404).type("text/plain").send("game not found");
-    const adapters = [...runtime.adapters.values()].map((a) =>
-      renderKv([
-        ["id", escapeHtml(a.id)],
-        ["version", escapeHtml(a.version)],
-        [
-          "boards",
-          a.boards
-            .map(
-              (b: BoardDefinition) =>
-                `${escapeHtml(b.id)} (${b.direction}, ${b.period}${b.completedOnly ? ", completed-only" : ""})`,
-            )
-            .join(", "),
-        ],
-      ]),
-    );
-    const genericSpec = runtime.game.adapters.find(
-      (spec): spec is GenericAdapterSpec => spec.kind === "generic",
-    );
-    const defaultBoard: BoardDefinition | undefined = genericSpec?.boards[0];
-    const top = defaultBoard
-      ? renderTable(
-          ["rank", "player", "value"],
-          runtime.db
-            .list(
-              defaultBoard,
-              defaultBoard.period === "all_time" ? "all_time" : new Date().toISOString().slice(0, 10),
-              0,
-              10,
-            )
-            .map((entry: LeaderboardEntry & { ordinal: number }) => [
-              String(entry.rank),
-              escapeHtml(entry.displayName),
-              String(entry.value),
-            ]),
-        )
-      : `<p class="muted">No boards.</p>`;
-    const body = `
-      <h1>${escapeHtml(runtime.game.id)}</h1>
-      <p class="muted">${escapeHtml(runtime.game.displayName)}</p>
-      ${renderKv([
-        ["auth", escapeHtml(runtime.game.authProvider)],
-        ["grace period", `${runtime.game.gracePeriodHours}h`],
-        ["adapters", String(runtime.adapters.size)],
-      ])}
-      <h2>Adapters</h2>
-      ${adapters.join("")}
-      <h2>Top 10 — ${escapeHtml(defaultBoard?.id ?? "(none)")}</h2>
-      ${top}`;
+    const envKeys = requiredEnvKeys(runtime.game.secretPrefix, runtime.game.authProvider);
+    const presence = envPresence(envKeys);
+    const lastRun = runtime.db.recentRuns(1)[0];
+    const allBoards: { adapter: { id: string; version: string }; board: BoardDefinition }[] = [];
+    for (const adapter of runtime.adapters.values())
+      for (const board of adapter.boards) allBoards.push({ adapter, board });
+    const boardsRows = allBoards.map(({ adapter, board }) => [
+      {
+        html: `<a href="/admin/games/${escapeHtml(runtime.game.id)}/boards/${escapeHtml(board.id)}">${escapeHtml(board.id)}</a>`,
+        label: "board",
+      },
+      { html: escapeHtml(board.direction), label: "direction" },
+      { html: escapeHtml(board.period), label: "period" },
+      { html: board.completedOnly ? "yes" : "no", label: "completed-only" },
+      {
+        html: `<code>${escapeHtml(adapter.id)}</code> <span class="muted">v${escapeHtml(adapter.version)}</span>`,
+        label: "adapter",
+      },
+    ]);
+    const envRows: { html: string; label: string }[] = envKeys.map((key) => ({
+      html: badge(presence[key] ? "present" : "missing", presence[key] ? "ok" : "bad"),
+      label: key,
+    }));
+    const ready = runtime.db.ready();
+    const actions = `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/players">Players</a>
+      <a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/runs">Recent runs</a>
+      <a class="btn secondary" href="/admin/manifest">Edit manifest</a>`;
+    const body = `${pageHead(
+      runtime.game.displayName,
+      `${runtime.game.id} · ${badge(runtime.game.authProvider)}`,
+      actions,
+    )}
+      <section class="card stack">
+        <h3>Status</h3>
+        <dl class="kv">
+          <dt>Grace period</dt><dd>${runtime.game.gracePeriodHours} hours</dd>
+          <dt>Adapters</dt><dd>${runtime.adapters.size} of ${runtime.game.adapters.length} loaded</dd>
+          <dt>Players</dt><dd>${runtime.db.countPlayers()}</dd>
+          <dt>Database</dt><dd>${badge(ready ? "ready" : "starting", ready ? "ok" : "bad")}</dd>
+          <dt>Last run</dt><dd>${
+            lastRun
+              ? `${escapeHtml(lastRun.createdAt.toISOString())} <span class="muted">(<code>${escapeHtml(lastRun.runId)}</code>)</span>`
+              : '<span class="muted">never</span>'
+          }</dd>
+        </dl>
+      </section>
+      <section class="card">
+        <h3>Boards</h3>
+        ${allBoards.length ? renderTable(["board", "direction", "period", "completed-only", "adapter"], boardsRows) : banner("No boards declared for this game.", "warn", "Add a board")}
+      </section>
+      <section class="card">
+        <h3>Required env vars</h3>
+        ${
+          envRows.length
+            ? renderTable(
+                ["env key", "status"],
+                envRows.map((r, i) => [
+                  { html: `<code>${escapeHtml(envKeys[i] ?? "")}</code>`, label: "env key" },
+                  { html: r.html, label: "status" },
+                ]),
+              )
+            : banner("No env vars required for this provider.", "warn")
+        }
+        <p class="muted" style="margin-top:0.5rem">Names only — values are never shown.</p>
+      </section>`;
     return reply.type("text/html").send(shell(runtime.game.id, body, nav("/admin/games")));
   });
+
+  // ─── Boards list and per-board view ──────────────────────────────────────────
+
+  app.get<{ Params: { gameId: string } }>("/admin/games/:gameId/boards", async (request, reply) => {
+    const runtime = runtimes.get(request.params.gameId);
+    if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+    const rows: { html: string; label: string }[][] = [];
+    for (const adapter of runtime.adapters.values())
+      for (const board of adapter.boards)
+        rows.push([
+          {
+            html: `<a href="/admin/games/${escapeHtml(runtime.game.id)}/boards/${escapeHtml(board.id)}">${escapeHtml(board.id)}</a>`,
+            label: "board",
+          },
+          { html: escapeHtml(board.direction), label: "direction" },
+          { html: escapeHtml(board.period), label: "period" },
+          { html: board.completedOnly ? "yes" : "no", label: "completed-only" },
+          {
+            html: `<code>${escapeHtml(adapter.id)}</code> <span class="muted">v${escapeHtml(adapter.version)}</span>`,
+            label: "adapter",
+          },
+        ]);
+    const body = `${pageHead(
+      `Boards · ${runtime.game.displayName}`,
+      `${runtime.game.id} — ${rows.length} board${rows.length === 1 ? "" : "s"} loaded.`,
+      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
+    )}${rows.length ? renderTable(["board", "direction", "period", "completed-only", "adapter"], rows) : banner("No boards loaded.", "warn")}`;
+    return reply.type("text/html").send(shell("Boards", body, nav("/admin/games")));
+  });
+
+  app.get<{ Params: { gameId: string; boardId: string } }>(
+    "/admin/games/:gameId/boards/:boardId",
+    async (request, reply) => {
+      const runtime = runtimes.get(request.params.gameId);
+      if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+      let board: BoardDefinition | undefined;
+      let adapterId: string | undefined;
+      for (const adapter of runtime.adapters.values()) {
+        const found = adapter.boards.find((candidate) => candidate.id === request.params.boardId);
+        if (found) {
+          board = found;
+          adapterId = adapter.id;
+          break;
+        }
+      }
+      if (!board) return reply.code(404).type("text/plain").send("board not found");
+      const periodKey = board.period === "all_time" ? "all_time" : new Date().toISOString().slice(0, 10);
+      const rows = runtime.db.list(board, periodKey, 0, 50);
+      const tableRows: { html: string; label: string; numeric?: boolean }[][] = rows.map((entry) => [
+        { html: String(entry.rank), label: "rank", numeric: true },
+        { html: escapeHtml(entry.displayName), label: "player" },
+        { html: String(entry.value), label: "value", numeric: true },
+      ]);
+      const foot = `Showing ${rows.length === 50 ? "up to 50" : rows.length} entries · period ${escapeHtml(periodKey)}`;
+      const body = `${pageHead(
+        board.id,
+        `${runtime.game.displayName} · <code>${escapeHtml(adapterId ?? "?")}</code> · ${escapeHtml(board.direction)} · ${escapeHtml(board.period)}${board.completedOnly ? " · completed-only" : ""}`,
+        `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/boards">All boards</a>`,
+      )}
+      ${tableRows.length ? renderTable(["rank", "player", "value"], tableRows, foot) : banner("No scores yet for this period.", "warn", "Empty board")}`;
+      return reply.type("text/html").send(shell(board.id, body, nav("/admin/games")));
+    },
+  );
+
+  // ─── Runs ────────────────────────────────────────────────────────────────────
 
   app.get<{ Params: { gameId: string } }>("/admin/games/:gameId/runs", async (request, reply) => {
     const runtime = runtimes.get(request.params.gameId);
     if (!runtime) return reply.code(404).type("text/plain").send("game not found");
-    const rows = runtime.db
-      .recentRuns(20)
-      .map((run: { runId: string; adapterId: string; createdAt: Date; payloadHash: string }) => [
-        escapeHtml(run.runId),
-        escapeHtml(run.adapterId),
-        escapeHtml(run.createdAt.toISOString()),
-        `<span class="muted">${escapeHtml(run.payloadHash.slice(0, 16))}…</span>`,
-      ]);
-    const body = `<h1>Runs — ${escapeHtml(runtime.game.id)}</h1>
-      <p class="muted">Last 20. Payload bodies redacted; payloadHash only.</p>
-      ${renderTable(["runId", "adapter", "createdAt", "payloadHash"], rows)}`;
+    const recent = runtime.db.recentRuns(20);
+    const rows = recent.map(
+      (run: { runId: string; adapterId: string; createdAt: Date; payloadHash: string }) => [
+        { html: `<code>${escapeHtml(run.runId)}</code>`, label: "runId" },
+        { html: `<code>${escapeHtml(run.adapterId)}</code>`, label: "adapter" },
+        { html: escapeHtml(run.createdAt.toISOString()), label: "createdAt" },
+        {
+          html: `<code title="${escapeHtml(run.payloadHash)}">${escapeHtml(run.payloadHash.slice(0, 16))}…</code>`,
+          label: "payloadHash",
+        },
+      ],
+    );
+    const body = `${pageHead(
+      `Runs · ${runtime.game.displayName}`,
+      "Last 20. Payload bodies are redacted; only the payload hash is shown so you can spot duplicates without exposing player data.",
+      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
+    )}${rows.length ? renderTable(["runId", "adapter", "createdAt", "payloadHash"], rows) : banner("No runs recorded.", "warn")}`;
     return reply.type("text/html").send(shell("Runs", body, nav("/admin/games")));
   });
+
+  // ─── Players (list + delete) ─────────────────────────────────────────────────
+
+  app.get<{ Params: { gameId: string } }>("/admin/games/:gameId/players", async (request, reply) => {
+    const runtime = runtimes.get(request.params.gameId);
+    if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+    const players = runtime.db.listPlayers(200);
+    const rows = players.map((player) => [
+      {
+        html: `<code title="${escapeHtml(player.id)}">${escapeHtml(truncateId(player.id))}</code>`,
+        label: "id",
+      },
+      { html: badge(player.provider), label: "provider" },
+      { html: escapeHtml(player.displayName), label: "display name" },
+      { html: escapeHtml(new Date(player.createdAt).toISOString()), label: "created (UTC)" },
+      {
+        html: `<form method="post" action="/admin/games/${escapeHtml(runtime.game.id)}/players/delete">
+          <input type="hidden" name="playerId" value="${escapeHtml(player.id)}">
+          ${confirmAction("Delete player", true)}
+        </form>`,
+        label: "actions",
+      },
+    ]);
+    const body = `${pageHead(
+      `Players · ${runtime.game.displayName}`,
+      `Most recent ${players.length} of this game. Delete removes the player row, refresh sessions, leaderboard entries, and runs. Audit log captures the operator and truncated id.`,
+      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
+    )}
+    ${players.length ? renderTable(["id", "provider", "display name", "created (UTC)", "actions"], rows) : banner("No players have signed into this game yet.", "warn", "Empty")}`;
+    return reply.type("text/html").send(shell("Players", body, nav("/admin/games")));
+  });
+
+  app.post<{ Params: { gameId: string }; Body: { playerId?: string } }>(
+    "/admin/games/:gameId/players/delete",
+    async (request, reply) => {
+      const runtime = runtimes.get(request.params.gameId);
+      if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+      const playerId = typeof request.body?.playerId === "string" ? request.body.playerId : "";
+      if (!playerId) return reply.code(400).type("text/plain").send("playerId required");
+      const removed = runtime.db.deletePlayer(playerId);
+      // Audit log: admin username (truncated) + truncated player id + timestamp.
+      // Never include the provider subject or the raw provider id.
+      const adminId = (request as unknown as { adminId?: string }).adminId ?? "?";
+      const adminRow = adminDb.findAdminById(adminId);
+      request.log.info(
+        {
+          admin: adminRow ? adminRow.username : "?",
+          game: runtime.game.id,
+          playerIdPrefix: truncateId(playerId),
+          removed,
+          ts: Date.now(),
+        },
+        "admin deleted player",
+      );
+      return reply.redirect(`/admin/games/${encodeURIComponent(runtime.game.id)}/players`, 302);
+    },
+  );
+
+  // ─── Adapters ────────────────────────────────────────────────────────────────
 
   app.get("/admin/adapters", async (_request, reply) => {
     const games = [...runtimes.values()];
@@ -472,58 +652,300 @@ export async function registerAdmin(
       }
     }
     const rows = listLoadedAdapters().map((a) => [
-      escapeHtml(a.id),
-      escapeHtml(a.version),
-      String(a.boards.length),
-      (usage.get(a.id) ?? []).map((g) => escapeHtml(g)).join(", ") || '<span class="muted">—</span>',
+      { html: `<code>${escapeHtml(a.id)}</code>`, label: "id" },
+      { html: `<code>${escapeHtml(a.version)}</code>`, label: "version" },
+      { html: String(a.boards.length), label: "boards", numeric: true },
+      {
+        html:
+          (usage.get(a.id) ?? []).map((g) => `<code>${escapeHtml(g)}</code>`).join(", ") ||
+          '<span class="muted">—</span>',
+        label: "games",
+      },
     ]);
-    const body = `<h1>Adapters</h1>${renderTable(["id", "version", "boards", "games"], rows)}`;
+    const body = `${pageHead(
+      "Adapters",
+      "Every adapter currently loaded by the runtime. `boards` is the number of declared boards; `games` lists the games that reference this adapter.",
+    )}${renderTable(["id", "version", "boards", "games"], rows)}`;
     return reply.type("text/html").send(shell("Adapters", body, nav("/admin/adapters")));
   });
 
+  // ─── Health ──────────────────────────────────────────────────────────────────
+
   app.get("/admin/health", async (_request, reply) => {
-    const games = [...runtimes.entries()].map(([id, runtime]) => {
-      const ready = runtime.db.ready();
-      const total = runtime.game.adapters.length;
-      const loaded = runtime.adapters.size;
-      return [
-        `<a href="/admin/games/${escapeHtml(id)}">${escapeHtml(id)}</a>`,
-        badge(ready ? "ready" : "starting", ready ? "ok" : "bad"),
-        `${loaded} / ${total}`,
-      ];
-    });
-    const body = `<h1>Health</h1>${renderTable(["game", "db", "adapters loaded"], games)}`;
+    const allowedOrigins = (process.env.BANTAM_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const cors = allowedOrigins.length
+      ? `<ul style="margin:0.25rem 0;padding-left:1.25rem">${allowedOrigins.map((value) => `<li><code>${escapeHtml(value)}</code></li>`).join("")}</ul>`
+      : '<p class="muted">No origins configured — same-origin only.</p>';
+    const rows: { html: string; label: string; numeric?: boolean }[][] = [...runtimes.entries()].map(
+      ([id, runtime]) => {
+        const ready = runtime.db.ready();
+        const total = runtime.game.adapters.length;
+        const loaded = runtime.adapters.size;
+        const envKeys = requiredEnvKeys(runtime.game.secretPrefix, runtime.game.authProvider);
+        const presence = envPresence(envKeys);
+        const allEnv = envKeys.every((key) => presence[key]);
+        return [
+          { html: `<a href="/admin/games/${escapeHtml(id)}">${escapeHtml(id)}</a>`, label: "game" },
+          { html: badge(ready ? "ready" : "starting", ready ? "ok" : "bad"), label: "db" },
+          { html: `${loaded} / ${total}`, label: "adapters", numeric: true },
+          { html: badge(allEnv ? "env ok" : "env missing", allEnv ? "ok" : "warn"), label: "env" },
+        ];
+      },
+    );
+    const body = `${pageHead(
+      "Health",
+      "Per-game readiness, adapter coverage, env completeness, and the CORS origin list (read-only — restart the host to change).",
+    )}
+      ${rows.length ? renderTable(["game", "db", "adapters", "env"], rows) : banner("No games loaded yet.", "warn")}
+      <section class="card">
+        <h3>CORS (read-only)</h3>
+        <p class="muted">Set <code>BANTAM_ALLOWED_ORIGINS</code> on the host to change. Edited only by restarting the container.</p>
+        ${cors}
+      </section>`;
     return reply.type("text/html").send(shell("Health", body, nav("/admin/health")));
+  });
+
+  // ─── Manifest editor ─────────────────────────────────────────────────────────
+
+  app.get("/admin/manifest", async (_request, reply) => {
+    const loaded = manifestStore.load();
+    const url = _request.url;
+    const justSaved = new URL(url, "http://x").searchParams.get("saved") === "1";
+    if (!loaded.ok) {
+      return reply
+        .type("text/html")
+        .send(
+          shell(
+            "Manifest",
+            `${pageHead("Manifest", "")}${banner(`Cannot read manifest: ${escapeHtml(loaded.error)}`, "bad")}`,
+            nav("/admin/manifest"),
+          ),
+        );
+    }
+    const bannerHtml = justSaved
+      ? banner("Saved. Runtime reloaded.", "ok", "Success")
+      : loaded.writable
+        ? ""
+        : banner(
+            `Manifest path <code>${escapeHtml(loaded.path)}</code> is read-only. The editor below is disabled. To edit via the UI, leave BANTAM_CONFIG_FILE unset and mount /data writable.`,
+            "warn",
+            "Read-only manifest",
+          );
+    const editorDisabled = loaded.writable ? "" : "disabled";
+    const manifest = loaded.manifest;
+    const gameFields = manifest.games.length
+      ? `<div class="game-grid">${manifest.games
+          .map((game, index) => {
+            const adapters = game.adapters as AdapterSpec[];
+            const adapterLines = adapters
+              .map((spec, i) => {
+                if (spec.kind === "generic") {
+                  const boards = spec.boards
+                    .map(
+                      (board) =>
+                        `<code>${escapeHtml(board.id)}</code> · ${escapeHtml(board.direction)} · ${escapeHtml(board.period)}${board.completedOnly ? " · completed-only" : ""}`,
+                    )
+                    .join(", ");
+                  return `<li><span class="muted">adapter ${i + 1}</span> · <code>generic</code> — ${boards || "<em>(no boards)</em>"}</li>`;
+                }
+                return `<li><span class="muted">adapter ${i + 1}</span> · <code>file</code> — source <code>${escapeHtml(spec.source)}</code></li>`;
+              })
+              .join("");
+            const authOptions =
+              manifest.environment === "production"
+                ? `<option value="pgs-v2"${game.authProvider === "pgs-v2" ? " selected" : ""}>pgs-v2</option>`
+                : `<option value="development"${game.authProvider === "development" ? " selected" : ""}>development</option><option value="pgs-v2"${game.authProvider === "pgs-v2" ? " selected" : ""}>pgs-v2</option>`;
+            return `<fieldset class="game">
+            <legend>${escapeHtml(game.id)}</legend>
+            ${field("Game id", `<input type="text" name="game[${index}].id" value="${escapeHtml(game.id)}" readonly>`)}
+            ${field("Display name", `<input type="text" name="game[${index}].displayName" value="${escapeHtml(game.displayName)}" required>`)}
+            ${field("Auth provider", `<select name="game[${index}].authProvider">${authOptions}</select>`)}
+            ${field("Grace period (hours)", `<input type="number" name="game[${index}].gracePeriodHours" value="${game.gracePeriodHours}" min="0" max="168">`)}
+            ${field(
+              "Secret prefix",
+              `<input type="text" name="game[${index}].secretPrefix" value="${escapeHtml(game.secretPrefix)}" pattern="[A-Z][A-Z0-9_]{1,47}" title="Uppercase letters, digits, underscore. 2-48 chars, starts with letter.">`,
+            )}
+            <div class="field">
+              <label>Adapters (read-only here)</label>
+              <ul style="margin:0.25rem 0;padding-left:1.25rem">${adapterLines || '<li class="muted">(none)</li>'}</ul>
+            </div>
+          </fieldset>`;
+          })
+          .join("")}</div>`
+      : banner(
+          "No games in the manifest yet. Use Advanced JSON to add the first game, or seed one via the deployment manifest.",
+          "warn",
+          "Empty manifest",
+        );
+    const productionWarning =
+      manifest.environment === "production"
+        ? banner(
+            "Production environment: <code>development</code> auth is rejected. Saved manifest must keep all games on <code>pgs-v2</code>.",
+            "warn",
+            "Production guard",
+          )
+        : "";
+    const meta = `<div class="btn-row" style="margin-bottom:1rem">
+      <span class="muted">Source</span> <code>${escapeHtml(loaded.path)}</code>
+      ${badge(loaded.writable ? "writable" : "read-only", loaded.writable ? "ok" : "warn")}
+    </div>`;
+    const body = `${pageHead(
+      "Manifest",
+      "Edit existing fields inline. Adding or removing games requires the Advanced JSON disclosure.",
+      `<span class="muted">last save: ${loaded.writable ? "live reload" : "read-only"}</span>`,
+    )}
+      ${meta}
+      ${bannerHtml}
+      ${productionWarning}
+      <form class="form wide" method="post" action="/admin/manifest">
+        ${field(
+          "Environment",
+          `<select name="environment" ${editorDisabled}>
+            <option value="development"${manifest.environment === "development" ? " selected" : ""}>development</option>
+            <option value="test"${manifest.environment === "test" ? " selected" : ""}>test</option>
+            <option value="production"${manifest.environment === "production" ? " selected" : ""}>production</option>
+          </select>`,
+        )}
+        <div class="field">
+          <label>Games</label>
+          ${gameFields}
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn primary" ${editorDisabled}>Save & reload</button>
+          <a class="btn ghost" href="/admin/health">Check health</a>
+        </div>
+      </form>
+      <details class="disclosure">
+        <summary>Advanced JSON</summary>
+        <div class="body">
+          <p class="muted">Use this to add or remove games, or to edit adapter specs (which the form does not expose).</p>
+          <form class="form wide" method="post" action="/admin/manifest">
+            ${field("Manifest JSON", `<textarea name="manifest" spellcheck="false" ${editorDisabled}>${escapeHtml(loaded.raw)}</textarea>`)}
+            <div class="form-actions">
+              <button type="submit" class="btn primary" ${editorDisabled}>Save & reload</button>
+            </div>
+          </form>
+        </div>
+      </details>
+      <p class="muted">Per-game secrets must be supplied as env vars: <code>\${secretPrefix}_IDENTITY_SALT</code>, <code>_SESSION_SECRET</code>, <code>_CURSOR_SECRET</code>, plus <code>_PGS_CLIENT_ID</code> / <code>_PGS_CLIENT_SECRET</code> for <code>pgs-v2</code>. Restart the container after changing them.</p>`;
+    return reply.type("text/html").send(shell("Manifest", body, nav("/admin/manifest")));
+  });
+
+  app.post("/admin/manifest", async (request, reply) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    const manifestTextRaw = typeof body?.["manifest"] === "string" ? body["manifest"] : "";
+    let manifest: ManifestFile;
+    let saveText: string;
+    // Snapshot of the on-disk manifest BEFORE we mutate it. Used to roll back
+    // if the reload fails — reading the disk post-save would just give us the
+    // new (broken) version back.
+    let priorManifest: ManifestFile | undefined;
+    if (manifestTextRaw.trim()) {
+      // Advanced JSON path: round-trip the operator's exact bytes so
+      // ordering/whitespace don't shift between save and re-render.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(manifestTextRaw);
+      } catch (error) {
+        return renderManifestError(reply, nav, [`Invalid JSON: ${String(error)}`]);
+      }
+      const { Value } = await import("@sinclair/typebox/value");
+      const { ManifestSchema } = await import("../config.js");
+      if (!Value.Check(ManifestSchema, parsed)) {
+        const details = [...Value.Errors(ManifestSchema, parsed)]
+          .map((item) => `${item.path}: ${item.message}`)
+          .join("; ");
+        return renderManifestError(reply, nav, [`Invalid manifest: ${details}`]);
+      }
+      manifest = parsed as ManifestFile;
+      const priorLoad = manifestStore.load();
+      if (priorLoad.ok) priorManifest = JSON.parse(JSON.stringify(priorLoad.manifest)) as ManifestFile;
+      saveText = manifestTextRaw;
+    } else {
+      // Form path: read the existing manifest, replace targeted fields.
+      const loaded = manifestStore.load();
+      if (!loaded.ok) return renderManifestError(reply, nav, [`Cannot read manifest: ${loaded.error}`]);
+      priorManifest = JSON.parse(JSON.stringify(loaded.manifest)) as ManifestFile;
+      manifest = JSON.parse(JSON.stringify(loaded.manifest)) as ManifestFile;
+      const envValue = typeof body?.["environment"] === "string" ? body["environment"] : "";
+      if (envValue === "development" || envValue === "test" || envValue === "production") {
+        manifest.environment = envValue;
+      }
+      // Per-game fields. Slot N must match the manifest's position so an
+      // add/remove doesn't silently drop or duplicate games — operators
+      // add or remove via Advanced JSON.
+      for (let i = 0; i < manifest.games.length; i++) {
+        const game = manifest.games[i];
+        if (!game) continue;
+        const idRaw = body?.[`game[${i}].id`];
+        if (typeof idRaw === "string" && idRaw !== game.id) {
+          return renderManifestError(reply, nav, [
+            `Game order changed (slot ${i} now references ${idRaw}, expected ${game.id}). Use Advanced JSON to add or remove games.`,
+          ]);
+        }
+        const displayName = body?.[`game[${i}].displayName`];
+        if (typeof displayName === "string" && displayName.trim()) game.displayName = displayName.trim();
+        const auth = body?.[`game[${i}].authProvider`];
+        if (auth === "development" || auth === "pgs-v2") game.authProvider = auth;
+        const grace = body?.[`game[${i}].gracePeriodHours`];
+        if (typeof grace === "string") {
+          const num = Number(grace);
+          if (Number.isInteger(num) && num >= 0 && num <= 168) game.gracePeriodHours = num;
+        }
+        const prefix = body?.[`game[${i}].secretPrefix`];
+        if (typeof prefix === "string" && /^[A-Z][A-Z0-9_]{1,47}$/.test(prefix)) {
+          game.secretPrefix = prefix;
+        }
+      }
+      saveText = JSON.stringify(manifest, null, 2);
+    }
+    const saveResult = manifestStore.save(saveText);
+    if (!saveResult.ok) return renderManifestError(reply, nav, saveResult.errors);
+    try {
+      await reloadRuntimes(manifest);
+    } catch (error) {
+      // Reload failed: roll the on-disk manifest back to the snapshot we
+      // captured before the save so a follow-up save can succeed without an
+      // already-bad manifest standing in the way.
+      if (priorManifest) {
+        try {
+          manifestStore.save(JSON.stringify(priorManifest, null, 2));
+        } catch {
+          // surface the original error regardless
+        }
+      }
+      return reply
+        .code(500)
+        .type("text/html")
+        .send(
+          shell(
+            "Manifest",
+            `${pageHead("Manifest", "")}${banner(`Manifest rolled back: runtime reload failed (${escapeHtml(String(error))}). The on-disk manifest was reverted to the previous version.`, "bad", "Save failed")}
+        <p><a href="/admin/manifest">Back to editor</a></p>`,
+            nav("/admin/manifest"),
+          ),
+        );
+    }
+    return reply.redirect("/admin/manifest?saved=1", 302);
   });
 }
 
-function resolveGameSecrets(
-  game: Omit<
-    RuntimeGame,
-    "identitySalt" | "sessionSecret" | "cursorSecret" | "pgsClientId" | "pgsClientSecret"
-  >,
-): RuntimeGame {
-  const env = process.env;
-  const read = (suffix: string): string => {
-    const key = `${game.secretPrefix}_${suffix}`;
-    const value = env[key];
-    if (!value || value.length < 16)
-      throw new BantamError(
-        "invalid-secret",
-        `Missing or short secret for ${game.id}: ${key} (≥16 chars required)`,
-        500,
-      );
-    return value;
-  };
-  const out: RuntimeGame = {
-    ...game,
-    identitySalt: read("IDENTITY_SALT"),
-    sessionSecret: read("SESSION_SECRET"),
-    cursorSecret: read("CURSOR_SECRET"),
-  };
-  if (game.authProvider === "pgs-v2") {
-    out.pgsClientId = read("PGS_CLIENT_ID");
-    out.pgsClientSecret = read("PGS_CLIENT_SECRET");
-  }
-  return out;
+async function renderManifestError(
+  reply: import("fastify").FastifyReply,
+  nav: (active: string) => { href: string; label: string; active?: boolean }[],
+  errors: string[],
+): Promise<import("fastify").FastifyReply> {
+  return reply
+    .code(400)
+    .type("text/html")
+    .send(
+      shell(
+        "Manifest",
+        `${pageHead("Manifest", "")}${errorList(errors)}<p><a class="btn secondary" href="/admin/manifest">Back to editor</a></p>`,
+        nav("/admin/manifest"),
+      ),
+    );
 }

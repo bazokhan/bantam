@@ -44,7 +44,7 @@ const GameSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const ManifestSchema = Type.Object(
+export const ManifestSchema = Type.Object(
   {
     environment: Type.Union([Type.Literal("development"), Type.Literal("test"), Type.Literal("production")]),
     // Empty `games` array is valid: the server boots with zero games and the admin
@@ -139,6 +139,29 @@ function isWritable(path: string | undefined): boolean {
   }
 }
 
+// Boot-time invariants shared by the initial config loader AND runtime reload
+// after a manifest edit. Both paths must reject the same misuses, otherwise
+// operators can paste JSON into the editor that boot would have rejected —
+// then watch the editor bounce with a runtime error. Centralizing the rule
+// keeps the two paths in lockstep.
+export function enforceBootRules(
+  environment: LoadedConfig["environment"],
+  games: readonly GameManifestEntry[],
+): void {
+  if (environment === "production") {
+    for (const game of games) {
+      if (game.authProvider === "development")
+        throw new BantamError(
+          "invalid-config",
+          `Development auth forbidden for ${game.id} in production`,
+          400,
+        );
+    }
+  }
+  if (new Set(games.map((game) => game.id)).size !== games.length)
+    throw new BantamError("invalid-config", "Duplicate game id", 400);
+}
+
 function buildLoadedConfig(
   manifest: { environment: LoadedConfig["environment"]; games: unknown[] },
   env: NodeJS.ProcessEnv,
@@ -155,14 +178,9 @@ function buildLoadedConfig(
   ) as GameManifestEntry[];
   if (only && allSelected.length !== 1)
     throw new BantamError("invalid-config", `Unknown BANTAM_ONLY_GAME: ${only}`, 500);
-  if (new Set(allSelected.map((game) => game.id)).size !== allSelected.length) {
-    throw new BantamError("invalid-config", "Duplicate game id", 500);
-  }
+  enforceBootRules(manifest.environment, allSelected);
   const games = new Map<string, RuntimeGame>();
   for (const [i, game] of allSelected.entries()) {
-    if (manifest.environment === "production" && game.authProvider === "development") {
-      throw new BantamError("invalid-config", `Development auth forbidden for ${game.id}`, 500);
-    }
     const adapters: AdapterSpec[] = (game.adapters as unknown[]).map((value, idx) =>
       validateAdapterSpec(value, `/games/${i}/adapters/${idx}`),
     );
@@ -245,4 +263,39 @@ export function loadConfig(
   }
 
   return buildLoadedConfig(manifest, env, manifestPath, manifestWritable);
+}
+
+// Read per-game secrets from process.env. Shared by the initial loader and
+// runtime reload so both paths surface identical errors when an env var is
+// missing or too short. Pure: takes a manifest-shape game entry and returns
+// the enriched runtime form.
+export function resolveGameSecrets(
+  game: Omit<
+    RuntimeGame,
+    "identitySalt" | "sessionSecret" | "cursorSecret" | "pgsClientId" | "pgsClientSecret"
+  >,
+  env: NodeJS.ProcessEnv = process.env,
+): RuntimeGame {
+  const read = (suffix: string): string => {
+    const key = `${game.secretPrefix}_${suffix}`;
+    const value = env[key];
+    if (!value || value.length < 16)
+      throw new BantamError(
+        "invalid-secret",
+        `Missing or short secret for ${game.id}: ${key} (≥16 chars required)`,
+        500,
+      );
+    return value;
+  };
+  const out: RuntimeGame = {
+    ...game,
+    identitySalt: read("IDENTITY_SALT"),
+    sessionSecret: read("SESSION_SECRET"),
+    cursorSecret: read("CURSOR_SECRET"),
+  };
+  if (game.authProvider === "pgs-v2") {
+    out.pgsClientId = read("PGS_CLIENT_ID");
+    out.pgsClientSecret = read("PGS_CLIENT_SECRET");
+  }
+  return out;
 }
