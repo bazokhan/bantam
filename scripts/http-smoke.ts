@@ -55,6 +55,8 @@ const tampered = await json("/v1/games/demo/runs/generic:high_score", {
 });
 if (tampered.status !== 400) throw new Error(`tampered expected 400, got ${JSON.stringify(tampered)}`);
 
+const publicBoard = await json("/v1/games/demo/leaderboards/high_score?limit=10");
+if (publicBoard.status !== 200) throw new Error(`public board failed: ${JSON.stringify(publicBoard)}`);
 const board = await json("/v1/games/demo/leaderboards/high_score?limit=10", { headers: headers(token) });
 if (board.status !== 200) throw new Error(`board failed: ${JSON.stringify(board)}`);
 const entries = (board.body as { entries: { value: number }[] }).entries;
