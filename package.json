@@ -31,7 +31,9 @@
     "docs:build": "npm --prefix docs run build",
     "docs:preview": "npm --prefix docs run preview",
     "docs:check": "npm --prefix docs run build",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run openapi:check"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run openapi:check",
+    "sdk:publish:dry": "node scripts/publish-sdk.mjs --dry-run --skip-verify",
+    "sdk:publish": "node scripts/publish-sdk.mjs"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",

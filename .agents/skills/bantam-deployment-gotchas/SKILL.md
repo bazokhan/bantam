@@ -119,6 +119,14 @@ docker start bantam
 
 `BANTAM_RESTORE_IF_MISSING=true BANTAM_ONLY_GAME=<id>` on container start triggers a one-game restore. Combine with `LITESTREAM_REPLICA_URL`, `LITESTREAM_ENDPOINT`, `AWS_*` env vars so litestream can find the replica.
 
+### "npm publish of @gamercury/bantam-sdk fails 401/403"
+
+CI must use trusted publishing, not a token. Local publish needs an org member with 2FA. Do not use a sibling `file:` path as a workaround. Fix: bind `npm trust github @gamercury/bantam-sdk --repo bazokhan/bantam --file publish-sdk.yml --allow-publish`, or from a terminal `npm login --auth-type=web` then `npm run sdk:publish`. Never publish `@gamercury/bantam` (server). Docs: `docs/src/content/docs/sdk.md`.
+
+### "GitHub Actions publish-sdk skipped or 403 from OIDC"
+
+The job lives in `.github/workflows/publish-sdk.yml` and only runs on tags `sdk-v*`, not on `main` or `v*` Docker tags. Tag must equal `packages/sdk/package.json` version (`sdk-v0.1.0` for `0.1.0`). The npm trusted publisher must name workflow filename `publish-sdk.yml` (not `ci.yml`), GitHub user `bazokhan`, repository `bantam`. Unvalidated trusts expire after 48 hours. Do not add `NPM_TOKEN` / `NODE_AUTH_TOKEN`.
+
 ## What this skill does NOT cover
 
 - Auth provider secrets (PGS v2 client id/secret). See `docs/security.md`.

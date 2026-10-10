@@ -106,6 +106,7 @@ export default defineConfig({
           label: "Deploy",
           items: [
             { label: "Docker and Coolify", slug: "deployment" },
+            { label: "SDK on npm", slug: "sdk" },
             { label: "Manifest and PGS v2", slug: "configuration" },
           ],
         },

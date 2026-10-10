@@ -8,7 +8,10 @@
 - Deterministic adapter changes require regenerated golden fixtures (where the adapter ships its own) and tampering regressions. Cross-repo contract checks run only when an associated sibling adapter repository is available in this checkout.
 - Run format check, lint, typecheck, unit/integration tests, OpenAPI drift check, production build, container smoke, and backup/restore before calling a release ready. A skipped required lane is a blocker.
 - Secrets belong in environment variables or the deployment secret store. Never commit `.env`, service-account JSON, OAuth secrets, S3 credentials, raw deployment dumps, database files, or restored player data.
+- Live dashboard credentials for `https://bantam-api.trugraph.io/admin/login` live only in `deploy/the deployment secret store` (gitignored). Document the path, never the values.
 - Restore commands must target one validated game. Never overwrite an existing database without an explicit `--force` recovery invocation while the service is stopped.
 - Do not create remotes, deploy, publish packages, or claim external success without explicit approval and evidence.
+- The only npm publish target is `@gamercury/bantam-sdk` (`packages/sdk`, public). Never publish the server package `@gamercury/bantam`. Workflow: `docs/src/content/docs/sdk.md`. CI publishes on tags `sdk-v*` from `.github/workflows/publish-sdk.yml` via npm trusted publishing (GitHub user `bazokhan`, no org, no `NPM_TOKEN`). Local fallback: `npm run sdk:publish` with 2FA.
 - This server is game-agnostic. No specific game is wired in by default; game-specific adapters live in their own sibling repositories. The only built-in adapter is the synthesized "generic" form for trivial games.
 - Documentation lives in `docs/` (Astro Starlight). Build it with `npm run docs:build`. Not shipped from runtime container.
+- Game-wiring agents must load `.agents/skills/bantam/SKILL.md`. Games install the client with `npm install @gamercury/bantam-sdk` (public registry), not a sibling `file:` path. Install this skill with `npx skills add bazokhan/bantam --skill bantam`. The skill documents **paths and env var names only** — never copy secrets into it.

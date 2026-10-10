@@ -12,6 +12,7 @@ export default tseslint.config(
       "eslint.config.js",
       "test/fixtures/adapters/**",
       "docs/**",
+      "scripts/publish-sdk.mjs",
     ],
   },
   eslint.configs.recommended,

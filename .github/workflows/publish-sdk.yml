@@ -1,0 +1,31 @@
+# Trusted publisher for @gamercury/bantam-sdk.
+# npmjs.com must name this exact filename (publish-sdk.yml), GitHub user bazokhan,
+# and repository bantam. No NPM_TOKEN. Do not fold this job into ci.yml.
+name: Publish SDK
+on:
+  push:
+    tags:
+      - "sdk-v*"
+permissions:
+  contents: read
+jobs:
+  publish-sdk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.1
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run verify
+      - name: Check tag matches packages/sdk version
+        run: |
+          tag="${GITHUB_REF_NAME#sdk-v}"
+          pkg="$(node -p "require('./packages/sdk/package.json').version")"
+          test "$tag" = "$pkg"
+      - run: npm publish -w @gamercury/bantam-sdk --access public
