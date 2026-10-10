@@ -263,6 +263,20 @@ describe("real HTTP API", () => {
       payload: submitPayload,
     });
     expect(replay.json<{ replayed: boolean }>().replayed).toBe(true);
+    const anonymousBoard = await app.inject({
+      method: "GET",
+      url: "/v1/games/demo-a/leaderboards/high_score?limit=1",
+    });
+    expect(anonymousBoard.statusCode, anonymousBoard.body).toBe(200);
+    expect(anonymousBoard.json<{ entries: { value: number }[] }>().entries[0]?.value).toBe(99);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/v1/games/demo-a/leaderboards/high_score/me",
+        })
+      ).statusCode,
+    ).toBe(401);
     const board = await app.inject({
       method: "GET",
       url: "/v1/games/demo-a/leaderboards/high_score?limit=1",

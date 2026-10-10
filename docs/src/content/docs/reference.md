@@ -19,16 +19,16 @@ The generated [OpenAPI JSON](/reference/bantam.openapi.json) is copied from the 
 
 All paths begin `/v1/games/{gameId}`.
 
-| Method | Path                                | Purpose                                      |
-| ------ | ----------------------------------- | -------------------------------------------- |
-| POST   | `/auth/exchange`                    | Exchange a PGS server auth code              |
-| POST   | `/auth/refresh`                     | Rotate a refresh token                       |
-| POST   | `/auth/logout`                      | Revoke the refresh family                    |
-| POST   | `/runs/{adapterId}`                 | Submit evidence for authoritative derivation |
-| GET    | `/leaderboards/{boardId}`           | Page through entries                         |
-| GET    | `/leaderboards/{boardId}/me`        | Get the caller’s rank                        |
-| GET    | `/leaderboards/{boardId}/around-me` | Get neighboring entries                      |
-| DELETE | `/player`                           | Delete the caller’s Bantam data              |
+| Method | Path                                | Purpose                                        |
+| ------ | ----------------------------------- | ---------------------------------------------- |
+| POST   | `/auth/exchange`                    | Exchange a PGS server auth code                |
+| POST   | `/auth/refresh`                     | Rotate a refresh token                         |
+| POST   | `/auth/logout`                      | Revoke the refresh family                      |
+| POST   | `/runs/{adapterId}`                 | Submit evidence for authoritative derivation   |
+| GET    | `/leaderboards/{boardId}`           | Page through entries (public; Bearer optional) |
+| GET    | `/leaderboards/{boardId}/me`        | Get the caller’s rank (Bearer)                 |
+| GET    | `/leaderboards/{boardId}/around-me` | Get neighboring entries (Bearer)               |
+| DELETE | `/player`                           | Delete the caller’s Bantam data                |
 
 Errors use `{ "error": { "code", "message", "requestId" } }`. Treat `401` as a refresh or reauthentication signal, `409 run-id-conflict` as tampering or a broken client ID generator, and `429` as retryable with backoff.
 

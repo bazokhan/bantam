@@ -221,16 +221,29 @@ export async function buildApp(
   });
 
   const authBuckets = new Map<string, { bucket: number; count: number }>();
+  const anonymousReadBuckets = new Map<string, { bucket: number; count: number }>();
   const authFingerprintSecret = randomBytes(32).toString("hex");
   function runtime(gameId: string): Runtime {
     const value = registry.get(gameId);
     if (!value) throw new BantamError("game-not-found", "Game not found", 404);
     return value;
   }
+  function takeAnonymousRead(ip: string): void {
+    const bucket = Math.floor(Date.now() / 60_000);
+    const key = hmac(ip, authFingerprintSecret);
+    const state = anonymousReadBuckets.get(key);
+    const count = state?.bucket === bucket ? state.count + 1 : 1;
+    anonymousReadBuckets.set(key, { bucket, count });
+    if (count > 120) throw new BantamError("rate-limited", "Rate limit exceeded", 429);
+  }
   async function playerId(header: string | undefined, game: RuntimeGame): Promise<string> {
     if (!header?.startsWith("Bearer "))
       throw new BantamError("invalid-session", "Session is missing or expired", 401);
     return verifyAccess(game, header.slice(7));
+  }
+  async function optionalPlayerId(header: string | undefined, game: RuntimeGame): Promise<string | null> {
+    if (!header) return null;
+    return playerId(header, game);
   }
   function boardFor(run: Runtime, boardId: string): BoardDefinition {
     for (const adapter of run.adapters.values()) {
@@ -356,8 +369,9 @@ export async function buildApp(
     { schema: { tags: ["leaderboards"], params: BoardParams, querystring: ListQuery } },
     async (request) => {
       const run = runtime(request.params.gameId);
-      const player = await playerId(request.headers.authorization, run.game);
-      run.db.takeRate(player, "read", 120, Date.now());
+      const player = await optionalPlayerId(request.headers.authorization, run.game);
+      if (player) run.db.takeRate(player, "read", 120, Date.now());
+      else takeAnonymousRead(request.ip);
       const board = boardFor(run, request.params.boardId);
       const period = periodFor(board, request.query.period);
       const limit = request.query.limit ?? 25;
