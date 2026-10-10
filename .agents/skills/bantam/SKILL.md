@@ -11,11 +11,11 @@ Read [reference.md](reference.md) for OpenAPI paths, manifest schema, `GameAdapt
 
 ## Hosts
 
-| Role | URL |
-| --- | --- |
-| Docs | https://bantam.trugraph.io |
+| Role                    | URL                            |
+| ----------------------- | ------------------------------ |
+| Docs                    | https://bantam.trugraph.io     |
 | Live API (this project) | https://bantam-api.trugraph.io |
-| Local default | http://localhost:3000 |
+| Local default           | http://localhost:3000          |
 
 Probe, in order: `GET /healthz`, `GET /version`, `GET /openapi.json`. `/version.adapters` is the loaded adapter id list. An empty list means no games in the manifest yet.
 
