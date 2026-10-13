@@ -121,7 +121,7 @@ docker start bantam
 
 ### "npm publish of @gamercury/bantam-sdk fails 401/403/404"
 
-CI must use trusted publishing, not a token. A **404** on `PUT @gamercury/bantam-sdk` with `NODE_AUTH_TOKEN: XXXXX` in the step env is almost always `actions/setup-node` `registry-url` writing `_authToken=${NODE_AUTH_TOKEN}` so npm never starts OIDC. Do not set `registry-url` or `NODE_AUTH_TOKEN` on `publish-sdk.yml`. Local publish needs an org member with 2FA. Do not use a sibling `file:` path as a workaround. Fix: bind `npm trust github @gamercury/bantam-sdk --repo bazokhan/bantam --file publish-sdk.yml --allow-publish`, or from a terminal `npm login --auth-type=web` then `npm run sdk:publish`. Never publish `@gamercury/bantam` (server). Docs: `docs/src/content/docs/sdk.md`.
+CI must use trusted publishing, not a token. A **404** or **ENEEDAUTH** on publish with `NODE_AUTH_TOKEN: XXXXX` in the step env is `actions/setup-node` `registry-url` writing `_authToken` and `always-auth=true`, so npm never starts OIDC. The publish step must rewrite that userconfig before `npm publish`. Local publish needs an org member with 2FA. Do not use a sibling `file:` path as a workaround. Fix: bind `npm trust github @gamercury/bantam-sdk --repo bazokhan/bantam --file publish-sdk.yml --allow-publish`, or from a terminal `npm login --auth-type=web` then `npm run sdk:publish`. Never publish `@gamercury/bantam` (server). Docs: `docs/src/content/docs/sdk.md`.
 
 ### "GitHub Actions publish-sdk skipped or 403 from OIDC"
 
