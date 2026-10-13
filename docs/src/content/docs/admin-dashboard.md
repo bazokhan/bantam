@@ -52,6 +52,32 @@ After a successful save, the server hot-reloads:
 
 A successful save redirects to `/admin/manifest?saved=1`.
 
+## Feature flags
+
+`GET /admin/games/:id/flags` lists that game's flags and hosts the create form. Each row shows the key, description, enabled/disabled state, rollout percentage, value, and last update, with **Enable/Disable**, **Edit**, and a confirm-guarded **Delete**.
+
+Flags are per-game and stored in the game's own SQLite file. Operators are the only writers; clients read them from `GET /v1/games/{gameId}/flags`.
+
+| Method | Path                            | Purpose                                         |
+| ------ | ------------------------------- | ----------------------------------------------- |
+| GET    | `/admin/games/:id/flags`        | List flags + create form.                       |
+| GET    | `/admin/games/:id/flags/:key`   | Edit one flag (key is read-only).               |
+| POST   | `/admin/games/:id/flags`        | Create or replace a flag by key.                |
+| POST   | `/admin/games/:id/flags/:key`   | Save edits to an existing flag.                 |
+| POST   | `/admin/games/:id/flags/toggle` | Flip enabled without touching rollout or value. |
+| POST   | `/admin/games/:id/flags/delete` | Delete a flag (confirm-guarded).                |
+
+Field rules:
+
+- **key** — `^[a-z0-9][a-z0-9._-]{0,63}$`. Rejected with an error banner otherwise; keys are not auto-corrected.
+- **description** — operator-facing, up to 200 characters. Never sent to clients.
+- **value** — up to 500 characters, sent to clients only when the flag resolves on for that caller; otherwise the public payload has `value: null`. Configuration only, never a secret.
+- **rollout percent** — integer `0`–`100` (required). `100` is on for everyone including signed-out clients. Below `100` resolves per signed-in player via `HMAC-SHA256(flagKey + ":" + playerId, per-game identity salt)`, so a player keeps the same answer across restarts and instances, and buckets cannot be correlated across games.
+- **enabled** — the master switch, checked before rollout.
+- **cap** — 64 flags per game. Creating a 65th key is rejected; updating an existing key is not.
+
+Every write is gated by the admin session cookie, and each change is logged with the admin identity, game, flag key, and action. A rollout change takes effect on the next client read; no restart or reload is needed.
+
 ## Routes
 
 | Method | Path                               | Purpose                                                                                                                     |
@@ -67,6 +93,7 @@ A successful save redirects to `/admin/manifest?saved=1`.
 | GET    | `/admin/games/:id/boards`          | Boards list across every loaded adapter.                                                                                    |
 | GET    | `/admin/games/:id/boards/:boardId` | Top 50 for that board (period = `all_time` or today UTC).                                                                   |
 | GET    | `/admin/games/:id/runs`            | Last 20 runs (runId, adapterId, createdAt, payloadHash only).                                                               |
+| GET    | `/admin/games/:id/flags`           | Feature flags list + create form.                                                                                           |
 | GET    | `/admin/games/:id/players`         | Player table (truncated id, provider, created) + a confirm-POST delete form.                                                |
 | POST   | `/admin/games/:id/players/delete`  | Delete a single player; reuses the same `deletePlayer` path the public API exposes.                                         |
 | GET    | `/admin/adapters`                  | Loaded adapters + which games reference them.                                                                               |

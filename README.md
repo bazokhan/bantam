@@ -45,6 +45,8 @@ The server boots with an empty manifest. To access the admin dashboard, open `ht
 
 The dashboard lists games, loaded adapters, per-game health, and recent runs (no payload bodies), plus a Manifest editor that validates JSON against the schema and hot-reloads the runtime — no container restart required for adding, removing, or replacing games.
 
+Per-game **feature flags** live at `/admin/games/{id}/flags`. Operators create, edit, enable/disable, and delete flags; clients read them from `GET /v1/games/{gameId}/flags` (optional `Bearer`) or via `bantam.getFlags()`. A flag below 100% rollout resolves per signed-in player from `HMAC-SHA256(flagKey + ":" + playerId, ${secretPrefix}_IDENTITY_SALT)`, so the answer is stable across restarts and instances; anonymous callers always see `false` for those. `value` is sent only when the flag resolves on for that caller. Flags take effect on the next client read — no restart. Never put a secret in a flag `value`.
+
 Today the game page only renders a top-10 for **generic** adapters, so file-adapter titles (boards, players, auth flips) look empty even when SQLite has data. The Manifest editor is a JSON textarea. Make that UI useful without secrets: `ADMIN_DASHBOARD_PLAN.md`.
 
 If you mount a `games.json` file into the container read-only, the editor shows a banner and disables save; unset `BANTAM_CONFIG_FILE` and let the server manage `/data/games.json` to edit through the UI.

@@ -17,6 +17,7 @@ import type { LoadedConfig } from "./config.js";
 import { GameDatabase } from "./db/game-database.js";
 import { BantamError } from "./errors.js";
 import { decodeCursor, encodeCursor } from "./services/cursor.js";
+import { resolveFlags } from "./services/feature-flags.js";
 import type { BoardDefinition, GameAdapterV1, RuntimeGame } from "./types.js";
 import { canonicalJson, derivePlayerId, hmac, sha256 } from "./util/crypto.js";
 import { sanitizeDisplayName } from "./util/display-name.js";
@@ -66,6 +67,21 @@ const AroundQuery = Type.Object(
   {
     period: Type.Optional(Type.String({ maxLength: 10 })),
     radius: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
+  },
+  { additionalProperties: false },
+);
+const FlagsResponse = Type.Object(
+  {
+    flags: Type.Array(
+      Type.Object(
+        {
+          key: Type.String(),
+          enabled: Type.Boolean(),
+          value: Type.Union([Type.String(), Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
@@ -171,9 +187,15 @@ export async function buildApp(
       info: {
         title: "Bantam Game Services",
         description: "Small footprint. Authoritative results.",
-        version: "0.1.0",
+        version: "0.2.0",
       },
-      tags: [{ name: "system" }, { name: "auth" }, { name: "leaderboards" }, { name: "players" }],
+      tags: [
+        { name: "system" },
+        { name: "auth" },
+        { name: "leaderboards" },
+        { name: "players" },
+        { name: "flags" },
+      ],
     },
   });
 
@@ -276,7 +298,7 @@ export async function buildApp(
   });
   app.get("/version", { schema: { tags: ["system"] } }, async () => ({
     name: "Bantam Game Services",
-    version: "0.1.0",
+    version: "0.2.0",
     commit: process.env.BANTAM_GIT_SHA ?? "local",
     builtAt: process.env.BANTAM_BUILT_AT ?? "unknown",
     adapters: listLoadedAdapters().map(({ id, version }) => ({ id, version })),
@@ -425,6 +447,23 @@ export async function buildApp(
       const player = await playerId(request.headers.authorization, run.game);
       run.db.deletePlayer(player);
       return reply.code(204).send();
+    },
+  );
+
+  // Read-only. Clients never write flags; operators do that through the admin
+  // UI. Bearer is optional so signed-out clients still get fully-rolled-out
+  // flags instead of an error, matching the public leaderboard read policy.
+  app.get<{ Params: Static<typeof GameParams> }>(
+    "/v1/games/:gameId/flags",
+    { schema: { tags: ["flags"], params: GameParams, response: { 200: FlagsResponse } } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await optionalPlayerId(request.headers.authorization, run.game);
+      if (player) run.db.takeRate(player, "read", 120, Date.now());
+      else takeAnonymousRead(request.ip);
+      return {
+        flags: resolveFlags(run.db.listFlags(), player, run.game.identitySalt),
+      };
     },
   );
 

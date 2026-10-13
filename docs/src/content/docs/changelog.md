@@ -11,7 +11,20 @@ description: Service, API, adapter, schema, and documentation versions.
 - Database migrations are monotonic and checksummed. They are not tied one-to-one to the service version.
 - Documentation snapshots must pass OpenAPI reconciliation for the release commit.
 
-## 0.1.0 — local foundation
+## 0.2.0 - feature flags
+
+Compatible API addition (minor). Additive migration `003_feature_flags.sql`.
+
+- Per-game feature flags, stored in each game's own SQLite file.
+- `GET /v1/games/{gameId}/flags` returns `{ flags: [{ key, enabled, value }] }`. Read-only to clients; optional `Bearer` so signed-out callers still receive fully-rolled-out flags.
+- Rollout resolution is deterministic: `HMAC-SHA256(flagKey + ":" + playerId, ${secretPrefix}_IDENTITY_SALT)`, stable across restarts and instances, and not correlatable across games. Flags below 100% resolve per signed-in player and resolve `false` when anonymous.
+- Admin UI at `/admin/games/{id}/flags`: create, edit, enable/disable, and confirm-guarded delete. Invalid writes redirect with an error banner. Max 64 flags per game. All writes are session-gated and logged.
+- SDK `@gamercury/bantam-sdk` **0.2.0** adds `getFlags()` and `isEnabled(key, fallback?)`. `isEnabled` returns `fallback` when the flag is missing or the read fails. npm publish is tag `sdk-v0.2.0`.
+- Flag `description` is operator-facing and never sent to clients. `value` is sent only when the flag resolves on for that caller and must never hold a secret.
+
+This entry describes the 0.2.0 source. Container, npm, and host deploy status are separate from this file.
+
+## 0.1.0 - local foundation
 
 - Multi-title Fastify service with isolated WAL databases and safe migrations.
 - PGS v2 and development authentication providers with rotating Bantam sessions.

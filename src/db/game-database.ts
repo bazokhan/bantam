@@ -2,7 +2,8 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import { BantamError } from "../errors.js";
-import type { BoardDefinition, DerivedBoardValue } from "../types.js";
+import { FLAG_MAX } from "../services/feature-flags.js";
+import type { BoardDefinition, DerivedBoardValue, FeatureFlag, FeatureFlagRow } from "../types.js";
 import { applyMigrations } from "./migrations.js";
 
 export type Player = { id: string; displayName: string };
@@ -289,5 +290,50 @@ export class GameDatabase {
       )
       .all(limit) as Array<{ runId: string; adapterId: string; createdAt: number; payloadHash: string }>;
     return rows.map((row) => ({ ...row, createdAt: new Date(row.createdAt) }));
+  }
+
+  listFlags(): FeatureFlagRow[] {
+    return this.db
+      .prepare(
+        "SELECT key,description,enabled,rollout_percent rolloutPercent,value,created_at createdAt,updated_at updatedAt FROM feature_flags ORDER BY key",
+      )
+      .all() as FeatureFlagRow[];
+  }
+
+  getFlag(key: string): FeatureFlagRow | undefined {
+    return this.db
+      .prepare(
+        "SELECT key,description,enabled,rollout_percent rolloutPercent,value,created_at createdAt,updated_at updatedAt FROM feature_flags WHERE key=?",
+      )
+      .get(key) as FeatureFlagRow | undefined;
+  }
+
+  upsertFlag(flag: FeatureFlag, now: number): FeatureFlagRow {
+    if (!Number.isInteger(flag.rolloutPercent) || flag.rolloutPercent < 0 || flag.rolloutPercent > 100) {
+      throw new BantamError("invalid-flag", "Rollout percent must be an integer 0-100", 400);
+    }
+    const existing = this.getFlag(flag.key);
+    if (!existing && this.countFlags() >= FLAG_MAX) {
+      throw new BantamError("flag-limit", `This game already has ${FLAG_MAX} flags`, 400);
+    }
+    this.db
+      .prepare(
+        `INSERT INTO feature_flags(key,description,enabled,rollout_percent,value,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
+      description=excluded.description, enabled=excluded.enabled,
+      rollout_percent=excluded.rollout_percent, value=excluded.value, updated_at=excluded.updated_at`,
+      )
+      .run(flag.key, flag.description, flag.enabled ? 1 : 0, flag.rolloutPercent, flag.value, now, now);
+    const row = this.getFlag(flag.key);
+    if (!row) throw new BantamError("flag-write-failed", "Flag upsert lost", 500);
+    return row;
+  }
+
+  deleteFlag(key: string): number {
+    return this.db.prepare("DELETE FROM feature_flags WHERE key=?").run(key).changes;
+  }
+
+  countFlags(): number {
+    return (this.db.prepare("SELECT count(*) value FROM feature_flags").pluck().get() as number) ?? 0;
   }
 }

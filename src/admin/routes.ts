@@ -25,6 +25,13 @@ import {
 } from "./middleware.js";
 import { ManifestStore, type ManifestFile } from "./manifest-store.js";
 import {
+  FLAG_DESCRIPTION_MAX,
+  FLAG_MAX,
+  FLAG_VALUE_MAX,
+  isValidFlagKey,
+  parseRolloutPercent,
+} from "../services/feature-flags.js";
+import {
   badge,
   banner,
   confirmAction,
@@ -408,6 +415,7 @@ export async function registerAdmin(
               <a class="btn ghost small" href="/admin/games/${escapeHtml(id)}/boards">Boards</a>
               <a class="btn ghost small" href="/admin/games/${escapeHtml(id)}/players">Players</a>
               <a class="btn ghost small" href="/admin/games/${escapeHtml(id)}/runs">Runs</a>
+              <a class="btn ghost small" href="/admin/games/${escapeHtml(id)}/flags">Flags</a>
             </div>`,
             label: "actions",
           },
@@ -707,6 +715,284 @@ export async function registerAdmin(
       </section>`;
     return reply.type("text/html").send(shell("Health", body, nav("/admin/health")));
   });
+
+  // ─── Feature flags ──────────────────────────────────────────────────────────
+
+  app.get<{ Params: { gameId: string } }>("/admin/games/:gameId/flags", async (request, reply) => {
+    const runtime = runtimes.get(request.params.gameId);
+    if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+    const saveError = new URL(request.url, "http://admin.local").searchParams.get("error");
+    const rows = runtime.db.listFlags();
+    const tableRows = rows.map((flag) => [
+      { html: `<code>${escapeHtml(flag.key)}</code>`, label: "key" },
+      {
+        html: flag.description ? escapeHtml(flag.description) : '<span class="muted">—</span>',
+        label: "description",
+      },
+      {
+        html: badge(flag.enabled ? "enabled" : "disabled", flag.enabled ? "ok" : "neutral"),
+        label: "state",
+      },
+      { html: `${flag.rolloutPercent}%`, label: "rollout", numeric: true },
+      {
+        html: flag.value ? `<code>${escapeHtml(flag.value)}</code>` : '<span class="muted">—</span>',
+        label: "value",
+      },
+      { html: escapeHtml(new Date(flag.updatedAt).toISOString()), label: "updated" },
+      {
+        html: `<div class="row-actions">
+          <form method="post" action="/admin/games/${escapeHtml(runtime.game.id)}/flags/toggle" style="display:inline">
+            <input type="hidden" name="key" value="${escapeHtml(flag.key)}">
+            <button type="submit" class="btn ghost small">${flag.enabled ? "Disable" : "Enable"}</button>
+          </form>
+          <a class="btn ghost small" href="/admin/games/${escapeHtml(runtime.game.id)}/flags/${encodeURIComponent(flag.key)}">Edit</a>
+          <form method="post" action="/admin/games/${escapeHtml(runtime.game.id)}/flags/delete" style="display:inline">
+            <input type="hidden" name="key" value="${escapeHtml(flag.key)}">
+            ${confirmAction("Delete", true)}
+          </form>
+        </div>`,
+        label: "actions",
+      },
+    ]);
+    const body = `${pageHead(
+      `Flags · ${runtime.game.displayName}`,
+      `${rows.length} flag${rows.length === 1 ? "" : "s"} (max ${FLAG_MAX}). Clients read flags from GET /v1/games/${escapeHtml(runtime.game.id)}/flags; only operators change them.`,
+      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
+    )}
+      ${saveError ? banner(escapeHtml(saveError), "bad", "Could not save") : ""}
+      <section class="card">
+        <h3>Existing flags</h3>
+        ${
+          tableRows.length
+            ? renderTable(
+                ["key", "description", "state", "rollout", "value", "updated", "actions"],
+                tableRows,
+              )
+            : banner("No flags defined for this game yet.", "warn", "No flags")
+        }
+      </section>
+      <section class="card">
+        <h3>Create or replace a flag</h3>
+        <form class="form" method="post" action="/admin/games/${escapeHtml(runtime.game.id)}/flags">
+          ${field(
+            "Key",
+            '<input type="text" name="key" required maxlength="64" pattern="[a-z0-9][a-z0-9._-]*" placeholder="daily_challenge">',
+            "Lowercase letters, digits, dot, dash, underscore. Starts with a letter or digit.",
+            true,
+          )}
+          ${field(
+            "Description",
+            `<input type="text" name="description" maxlength="${FLAG_DESCRIPTION_MAX}">`,
+            "Operator-facing note. Never shown to clients.",
+          )}
+          ${field(
+            "Value (optional)",
+            `<input type="text" name="value" maxlength="${FLAG_VALUE_MAX}">`,
+            "Short string delivered to clients only when the flag resolves on for that caller. Not a secret.",
+          )}
+          ${field(
+            "Rollout percent",
+            '<input type="number" name="rolloutPercent" value="100" min="0" max="100">',
+            "0-100. Below 100 resolves per signed-in player; anonymous callers see only flags at 100%.",
+          )}
+          ${field(
+            "Enabled",
+            '<div class="checkbox-row"><input type="checkbox" name="enabled" value="true" checked><span>Enabled on create</span></div>',
+          )}
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Save flag</button>
+          </div>
+        </form>
+      </section>`;
+    return reply.type("text/html").send(shell("Flags", body, nav("/admin/games")));
+  });
+
+  app.get<{ Params: { gameId: string; key: string } }>(
+    "/admin/games/:gameId/flags/:key",
+    async (request, reply) => {
+      const runtime = runtimes.get(request.params.gameId);
+      if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+      const flag = runtime.db.getFlag(request.params.key);
+      if (!flag) return reply.code(404).type("text/plain").send("flag not found");
+      const body = `${pageHead(
+        flag.key,
+        `${runtime.game.displayName} · updated ${escapeHtml(new Date(flag.updatedAt).toISOString())}`,
+        `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/flags">All flags</a>`,
+      )}
+      <section class="card">
+        <form class="form" method="post" action="/admin/games/${escapeHtml(runtime.game.id)}/flags/${encodeURIComponent(flag.key)}">
+          <input type="hidden" name="key" value="${escapeHtml(flag.key)}">
+          ${field("Key", `<input type="text" value="${escapeHtml(flag.key)}" readonly>`)}
+          ${field("Description", `<input type="text" name="description" maxlength="${FLAG_DESCRIPTION_MAX}" value="${escapeHtml(flag.description)}">`)}
+          ${field("Value", `<input type="text" name="value" maxlength="${FLAG_VALUE_MAX}" value="${escapeHtml(flag.value ?? "")}">`)}
+          ${field("Rollout percent", `<input type="number" name="rolloutPercent" value="${flag.rolloutPercent}" min="0" max="100">`)}
+          ${field("Enabled", `<div class="checkbox-row"><input type="checkbox" name="enabled" value="true"${flag.enabled ? " checked" : ""}><span>Enabled</span></div>`)}
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Save changes</button>
+          </div>
+        </form>
+      </section>`;
+      return reply.type("text/html").send(shell(flag.key, body, nav("/admin/games")));
+    },
+  );
+
+  // Shared parse for every flag write. Rejects malformed operator input before
+  // it reaches SQLite so a bad paste can't silently become a broken flag.
+  const flagFromBody = (
+    body: Record<string, unknown> | undefined,
+    overrides?: Partial<{ key: string; enabled: boolean }>,
+  ): { key: string; description: string; value: string | null; rolloutPercent: number; enabled: boolean } => {
+    const key = overrides?.key ?? (typeof body?.["key"] === "string" ? body["key"].trim() : "");
+    if (!isValidFlagKey(key))
+      throw new BantamError("invalid-flag", "Flag key must match ^[a-z0-9][a-z0-9._-]{0,63}$", 400);
+    const description =
+      typeof body?.["description"] === "string"
+        ? body["description"].trim().slice(0, FLAG_DESCRIPTION_MAX)
+        : "";
+    const rawValue = typeof body?.["value"] === "string" ? body["value"].trim() : "";
+    let rolloutPercent: number;
+    try {
+      rolloutPercent = parseRolloutPercent(body?.["rolloutPercent"]);
+    } catch (error) {
+      throw new BantamError(
+        "invalid-flag",
+        error instanceof Error ? error.message : "Rollout percent must be an integer 0-100",
+        400,
+      );
+    }
+    return {
+      key,
+      description,
+      value: rawValue ? rawValue.slice(0, FLAG_VALUE_MAX) : null,
+      rolloutPercent,
+      enabled: overrides?.enabled ?? body?.["enabled"] === "true",
+    };
+  };
+
+  const flagRedirect = (gameId: string) => `/admin/games/${encodeURIComponent(gameId)}/flags`;
+
+  const handleFlagWrite = (
+    request: { body?: unknown; params: { gameId: string }; log: { info: (o: unknown, m: string) => void } },
+    reply: import("fastify").FastifyReply,
+    apply: (runtime: Runtime, parsed: ReturnType<typeof flagFromBody>) => void,
+    action: string,
+    keyOverride?: string,
+  ): import("fastify").FastifyReply => {
+    const runtime = runtimes.get(request.params.gameId);
+    if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+    let parsed: ReturnType<typeof flagFromBody>;
+    try {
+      parsed = flagFromBody(
+        request.body as Record<string, unknown> | undefined,
+        keyOverride ? { key: keyOverride } : undefined,
+      );
+      apply(runtime, parsed);
+    } catch (error) {
+      if (error instanceof BantamError && error.statusCode === 404) {
+        return reply.code(404).type("text/plain").send(error.message);
+      }
+      const message = error instanceof BantamError ? error.message : String(error);
+      return reply.redirect(`${flagRedirect(runtime.game.id)}?error=${encodeURIComponent(message)}`, 302);
+    }
+    request.log.info(
+      {
+        admin: (request as unknown as { adminId?: string }).adminId ?? "?",
+        game: runtime.game.id,
+        flag: parsed.key,
+        action,
+        enabled: parsed.enabled,
+        rolloutPercent: parsed.rolloutPercent,
+        ts: Date.now(),
+      },
+      "admin changed feature flag",
+    );
+    return reply.redirect(flagRedirect(runtime.game.id), 302);
+  };
+
+  app.post<{ Params: { gameId: string } }>("/admin/games/:gameId/flags", async (request, reply) =>
+    handleFlagWrite(
+      request,
+      reply,
+      (runtime, parsed) => {
+        runtime.db.upsertFlag(parsed, Date.now());
+      },
+      "upsert",
+    ),
+  );
+
+  app.post<{ Params: { gameId: string; key: string } }>(
+    "/admin/games/:gameId/flags/:key",
+    async (request, reply) =>
+      handleFlagWrite(
+        request,
+        reply,
+        (runtime, parsed) => {
+          if (!runtime.db.getFlag(request.params.key)) {
+            throw new BantamError("flag-not-found", "flag not found", 404);
+          }
+          runtime.db.upsertFlag({ ...parsed, key: request.params.key }, Date.now());
+        },
+        "update",
+        request.params.key,
+      ),
+  );
+
+  app.post<{ Params: { gameId: string }; Body: { key?: string } }>(
+    "/admin/games/:gameId/flags/toggle",
+    async (request, reply) => {
+      const runtime = runtimes.get(request.params.gameId);
+      if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+      const key = typeof request.body?.["key"] === "string" ? request.body["key"] : "";
+      const existing = runtime.db.getFlag(key);
+      if (!existing) return reply.code(404).type("text/plain").send("flag not found");
+      runtime.db.upsertFlag(
+        {
+          key: existing.key,
+          description: existing.description,
+          enabled: !existing.enabled,
+          rolloutPercent: existing.rolloutPercent,
+          value: existing.value,
+        },
+        Date.now(),
+      );
+      request.log.info(
+        {
+          admin: (request as unknown as { adminId?: string }).adminId ?? "?",
+          game: runtime.game.id,
+          flag: key,
+          action: "toggle",
+          enabled: !existing.enabled,
+          rolloutPercent: existing.rolloutPercent,
+          ts: Date.now(),
+        },
+        "admin toggled feature flag",
+      );
+      return reply.redirect(flagRedirect(runtime.game.id), 302);
+    },
+  );
+
+  app.post<{ Params: { gameId: string }; Body: { key?: string } }>(
+    "/admin/games/:gameId/flags/delete",
+    async (request, reply) => {
+      const runtime = runtimes.get(request.params.gameId);
+      if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+      const key = typeof request.body?.["key"] === "string" ? request.body["key"] : "";
+      if (!isValidFlagKey(key)) return reply.code(400).type("text/plain").send("invalid flag key");
+      if (!runtime.db.getFlag(key)) return reply.code(404).type("text/plain").send("flag not found");
+      runtime.db.deleteFlag(key);
+      request.log.info(
+        {
+          admin: (request as unknown as { adminId?: string }).adminId ?? "?",
+          game: runtime.game.id,
+          flag: key,
+          action: "delete",
+          ts: Date.now(),
+        },
+        "admin deleted feature flag",
+      );
+      return reply.redirect(flagRedirect(runtime.game.id), 302);
+    },
+  );
 
   // ─── Manifest editor ─────────────────────────────────────────────────────────
 

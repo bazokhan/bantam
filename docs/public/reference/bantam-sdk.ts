@@ -3,6 +3,7 @@ export type AuthResult =
   | { status: "authenticated"; session: Session; displayName: string }
   | { status: "cancelled" | "unavailable"; reason?: string };
 export type LeaderboardEntry = { displayName: string; value: number; rank: number };
+export type FeatureFlag = { key: string; enabled: boolean; value: string | null };
 export type CandidateValue = {
   boardId: string;
   periodKey: string;
@@ -184,6 +185,23 @@ export class BantamClient {
     await this.request("/player", { method: "DELETE" });
     await this.options.storage.remove(this.sessionKey);
     await this.options.storage.remove(this.queueKey);
+  }
+
+  // Read-only. Sends the session when one exists so partial rollouts resolve
+  // per player; signed-out callers still receive fully-rolled-out flags.
+  // `isEnabled` returns `fallback` when the key is missing or the read fails.
+  async getFlags(): Promise<FeatureFlag[]> {
+    const response = await this.request<{ flags: FeatureFlag[] }>("/flags");
+    return response.flags;
+  }
+
+  async isEnabled(key: string, fallback = false): Promise<boolean> {
+    try {
+      const flag = (await this.getFlags()).find((item) => item.key === key);
+      return flag ? flag.enabled : fallback;
+    } catch {
+      return fallback;
+    }
   }
 
   private async request<T = void>(
