@@ -19,6 +19,7 @@ Migrations live in `migrations/`:
 
 - `001_initial.sql` — `players`, `refresh_sessions`, `runs`, `leaderboard_entries`, `rate_limits` (per-game DB)
 - `002_admins.sql` — `admins`, `admin_sessions` (server-global DB)
+- `003_feature_flags.sql` — `feature_flags` (per-game DB)
 
 Per-game DBs are at `/data/games/<id>/bantam.sqlite`. The admin DB is at `/data/admin.sqlite`. Litestream replication of `/data` covers both.
 

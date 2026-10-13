@@ -20,8 +20,11 @@ Prefix: `/v1/games/{gameId}` unless noted. `gameId` 2–48 chars.
 | GET    | `/v1/games/{gameId}/leaderboards/{boardId}/me`        | Query `period`. Bearer required.                                                                               |
 | GET    | `/v1/games/{gameId}/leaderboards/{boardId}/around-me` | Query `period`, `radius` (1–10). Bearer required.                                                              |
 | DELETE | `/v1/games/{gameId}/player`                           | Erasure. Bearer required.                                                                                      |
+| GET    | `/v1/games/{gameId}/flags`                            | `{ flags: [{ key, enabled, value }] }`. Bearer optional (needed for partial rollouts). Read-only.              |
 
 No achievements routes. Admin UI under `/admin/*` (cookie session). Admin run list omits payload bodies.
+
+Feature flags: operators write at `/admin/games/{gameId}/flags`; clients only read. `enabled` is the rollout decision — master switch off ⇒ `false`; `100%` ⇒ `true` for everyone including signed-out; `1-99%` ⇒ per signed-in player via `HMAC-SHA256(flagKey + ":" + playerId, ${secretPrefix}_IDENTITY_SALT)`, `false` when anonymous. Key `^[a-z0-9][a-z0-9._-]{0,63}$`. Max 64 flags per game. `description` is operator-facing and never sent to clients; `value` is sent only when the flag resolves on for that caller and must never be a secret.
 
 ## Manifest (`games.json`)
 
@@ -89,6 +92,8 @@ Public npm: `npm install @gamercury/bantam-sdk`. Source: `packages/sdk`. Do not 
 | `myRank(boardId, period?)`                           | `{ entry }`                                                                              |
 | `aroundMe(boardId, period?, radius?)`                | `{ entries }`                                                                            |
 | `deleteMyData()`                                     | DELETE `/player`; clears session and queue keys.                                         |
+| `getFlags()`                                         | `{ flags }` via GET `/flags`; sends the session when present.                            |
+| `isEnabled(key, fallback?)`                          | Boolean gate; `fallback` (default `false`) when the flag is absent or the read fails.    |
 
 `QueuedRun`: `{ gameId, adapterId, runId, payload, candidates, expiresAt? }`. `CandidateValue`: `{ boardId, periodKey, value, direction }`. Storage keys: `bantam:{gameId}:session` and `bantam:{gameId}:queue`. Default timeout 10s.
 

@@ -36,6 +36,9 @@ process.env.TEST_ECHO_CURSOR_SECRET = echoSecret;
 const config = loadConfig(manifestPath);
 void GenericAdapter;
 
+// Games come from the loaded config, which already validated the manifest.
+const manifestGameIds = [...config.games.keys()];
+
 await preloadAdapterDirectory(adaptersDir);
 const app = await buildApp(config, { logger: false });
 
@@ -50,6 +53,7 @@ try {
   if (reg.statusCode !== 302) {
     throw new Error(`register failed: ${reg.statusCode} ${reg.body.slice(0, 200)}`);
   }
+  const adminCookie = reg.headers["set-cookie"]!.toString().split(";")[0]!;
 
   // Seed demo game — five players, varied scores.
   const players = [
@@ -96,6 +100,29 @@ try {
       headers: { authorization: `Bearer ${token}` },
       payload: { runId: `echo-${p.code}-${randomUUID()}`, payload: { value: p.value } },
     });
+  }
+
+  // Seed feature flags through the admin write path (the live app is the
+  // single SQLite writer). Mixed shapes on purpose: fully rolled out, a
+  // string value, a partial rollout, and a disabled flag.
+  const seedFlags = [
+    "key=daily_challenge&description=Daily+challenge+mode&rolloutPercent=100&enabled=true",
+    "key=season_badge&description=Season+badge+in+results&value=s3&rolloutPercent=100&enabled=true",
+    "key=experimental_shop&description=Half-rolled-out+experiment&rolloutPercent=50&enabled=true",
+    "key=legacy_tutorial&description=Turned+off&rolloutPercent=100",
+  ];
+  for (const gameId of manifestGameIds) {
+    for (const payload of seedFlags) {
+      const saved = await app.inject({
+        method: "POST",
+        url: `/admin/games/${gameId}/flags`,
+        payload,
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie: adminCookie },
+      });
+      if (saved.statusCode !== 302) {
+        throw new Error(`flag seed failed for ${gameId}: ${saved.statusCode} ${saved.body.slice(0, 200)}`);
+      }
+    }
   }
 
   process.stdout.write(

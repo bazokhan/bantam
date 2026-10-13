@@ -23,6 +23,19 @@ const bantam = new BantamClient({
 
 Vite, webpack, and Capacitor WebViews bundle the client into the game. Players do not run npm. CI for a game must be able to `npm ci` from registry.npmjs.org — no checkout of this repository is required.
 
+## Feature flags
+
+```ts
+const flags = await bantam.getFlags();
+// [{ key: "daily_challenge", enabled: true, value: null }, ...]
+
+if (await bantam.isEnabled("daily_challenge")) enableDailyMode();
+
+const season = flags.find((f) => f.key === "season_badge" && f.enabled)?.value ?? "s1";
+```
+
+`getFlags()` sends the session automatically when one exists, so partial rollouts resolve per player. Called signed out, it still returns fully-rolled-out flags — gameplay must never depend on login succeeding. `isEnabled(key, fallback)` returns `fallback` (default `false`) when the flag is missing or the request fails, so a down API does not take down gameplay. Flags are operator-controlled and read-only from the client. See [API and SDK](/reference/) for rollout semantics.
+
 API details: [API and SDK](/reference/). Adapter files still live in the **game** repo and are mounted on the server; they are not on npm.
 
 ## What gets published
@@ -47,8 +60,8 @@ That filename must match `.github/workflows/publish-sdk.yml` exactly (basename o
 Then bump `packages/sdk/package.json` `version` (incompatible HTTP/SDK changes are a **major**), verify, and tag:
 
 ```bash
-git tag sdk-v0.1.0
-git push origin sdk-v0.1.0
+git tag sdk-v0.2.0
+git push origin sdk-v0.2.0
 ```
 
 The tag **must** match `packages/sdk/package.json` (`sdk-v` + semver). Workflow `publish-sdk.yml` runs `npm run verify` and `npm publish -w @gamercury/bantam-sdk --access public` with `id-token: write`. Provenance is attached automatically when the GitHub repo is public; a private repo still publishes, without provenance.

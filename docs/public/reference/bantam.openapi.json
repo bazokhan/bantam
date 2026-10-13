@@ -3,7 +3,7 @@
   "info": {
     "title": "Bantam Game Services",
     "description": "Small footprint. Authoritative results.",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "components": {
     "schemas": {}
@@ -430,6 +430,73 @@
           }
         }
       }
+    },
+    "/v1/games/{gameId}/flags": {
+      "get": {
+        "tags": [
+          "flags"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "flags": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "value": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "enabled",
+                          "value"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "flags"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "tags": [
@@ -444,6 +511,9 @@
     },
     {
       "name": "players"
+    },
+    {
+      "name": "flags"
     }
   ]
 }

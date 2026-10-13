@@ -15,6 +15,14 @@ import { derivePlayerId } from "../src/util/crypto.js";
 import { sanitizeDisplayName } from "../src/util/display-name.js";
 import { BantamError } from "../src/errors.js";
 import { GenericAdapter } from "../src/adapters/built-in/generic.js";
+import {
+  FLAG_MAX,
+  isValidFlagKey,
+  parseRolloutPercent,
+  resolveFlags,
+} from "../src/services/feature-flags.js";
+import type { FeatureFlagRow } from "../src/types.js";
+import { BantamClient } from "../packages/sdk/src/index.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -174,6 +182,24 @@ describe("SQLite durability and leaderboard semantics", () => {
       `${readFileSync(join(migrations, "001_initial.sql"), "utf8")}\n-- changed\n`,
     );
     expect(() => new GameDatabase(path, migrations)).toThrow("modified");
+  });
+  it("upgrades an existing game database with 003_feature_flags", () => {
+    const root = temp();
+    const migrations = join(root, "migrations");
+    cpSync(join(process.cwd(), "migrations"), migrations, { recursive: true });
+    rmSync(join(migrations, "003_feature_flags.sql"));
+    const path = join(root, "game.sqlite");
+    new GameDatabase(path, migrations).close();
+    const before = new Database(path);
+    expect(before.prepare("SELECT count(*) FROM schema_migrations").pluck().get()).toBe(2);
+    before.close();
+    cpSync(
+      join(process.cwd(), "migrations", "003_feature_flags.sql"),
+      join(migrations, "003_feature_flags.sql"),
+    );
+    const db = new GameDatabase(path, migrations);
+    expect(db.listFlags()).toEqual([]);
+    db.close();
   });
   it("rolls back a failed migration and refuses newer or destructive schemas", () => {
     const root = temp();
@@ -978,6 +1004,304 @@ describe("admin dashboard P3 — folded into /admin/health", () => {
     } finally {
       delete process.env.BANTAM_ALLOWED_ORIGINS;
       clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+});
+
+describe("feature flags", () => {
+  function row(key: string, overrides: Partial<FeatureFlagRow> = {}): FeatureFlagRow {
+    return {
+      key,
+      description: "",
+      enabled: 1,
+      rolloutPercent: 100,
+      value: null,
+      createdAt: 0,
+      updatedAt: 0,
+      ...overrides,
+    };
+  }
+
+  function form(
+    app: import("fastify").FastifyInstance,
+    cookie: string,
+    payload: string,
+    url = "/admin/games/demo/flags",
+  ) {
+    return app.inject({
+      method: "POST",
+      url,
+      payload,
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+    });
+  }
+
+  it("gates on the enabled switch before rollout", () => {
+    const flags = resolveFlags(
+      [row("off", { enabled: 0, rolloutPercent: 100, value: "hidden" })],
+      "player-1",
+      "salt",
+    );
+    expect(flags[0]).toEqual({ key: "off", enabled: false, value: null });
+  });
+
+  it("returns fully-rolled-out flags to anonymous callers and withholds value when off", () => {
+    const flags = resolveFlags(
+      [
+        row("full", { rolloutPercent: 100, value: "on" }),
+        row("partial", { rolloutPercent: 50, value: "maybe" }),
+        row("none", { rolloutPercent: 0, value: "never" }),
+      ],
+      null,
+      "salt",
+    );
+    expect(flags).toEqual([
+      { key: "full", enabled: true, value: "on" },
+      { key: "partial", enabled: false, value: null },
+      { key: "none", enabled: false, value: null },
+    ]);
+  });
+
+  it("buckets deterministically and spreads partial rollout", () => {
+    const flags = [row("partial", { rolloutPercent: 50, value: "x" })];
+    const first = resolveFlags(flags, "player-1", "salt")[0];
+    const second = resolveFlags(flags, "player-1", "salt")[0];
+    expect(first).toEqual(second);
+    expect(first?.value).toBe(first?.enabled ? "x" : null);
+    const on = Array.from(
+      { length: 200 },
+      (_, i) => resolveFlags(flags, `player-${i}`, "salt")[0]?.enabled,
+    ).filter(Boolean).length;
+    expect(on).toBeGreaterThan(60);
+    expect(on).toBeLessThan(140);
+  });
+
+  it("scopes buckets per game salt so titles cannot be correlated", () => {
+    const flags = [row("partial", { rolloutPercent: 50 })];
+    const a = Array.from({ length: 100 }, (_, i) => resolveFlags(flags, `p${i}`, "salt-a")[0]?.enabled);
+    const b = Array.from({ length: 100 }, (_, i) => resolveFlags(flags, `p${i}`, "salt-b")[0]?.enabled);
+    expect(a).not.toEqual(b);
+  });
+
+  it("validates flag keys and rollout percent", () => {
+    expect(isValidFlagKey("daily_challenge")).toBe(true);
+    expect(isValidFlagKey("1bad")).toBe(true);
+    expect(isValidFlagKey("Daily")).toBe(false);
+    expect(isValidFlagKey("")).toBe(false);
+    expect(isValidFlagKey("has space")).toBe(false);
+    expect(isValidFlagKey("x".repeat(65))).toBe(false);
+    expect(parseRolloutPercent("50")).toBe(50);
+    expect(parseRolloutPercent(0)).toBe(0);
+    expect(() => parseRolloutPercent("")).toThrow("required");
+    expect(() => parseRolloutPercent("50.5")).toThrow("integer");
+    expect(() => parseRolloutPercent("101")).toThrow("integer");
+  });
+
+  it("rejects a malformed flag key, shows the error banner, and serves valid flags publicly", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const page = await app.inject({ method: "GET", url: "/admin/games/demo/flags", headers: { cookie } });
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toMatch(/Flags/);
+
+      const bad = await form(app, cookie, "key=Bad+Key&rolloutPercent=100&enabled=true");
+      expect(bad.statusCode).toBe(302);
+      expect(bad.headers["location"]).toContain("error=");
+
+      const shown = await app.inject({
+        method: "GET",
+        url: String(bad.headers["location"]),
+        headers: { cookie },
+      });
+      expect(shown.body).toMatch(/Could not save/);
+      expect(shown.body).toMatch(/Flag key must match/);
+
+      const missingRollout = await form(app, cookie, "key=ok_key&enabled=true");
+      expect(missingRollout.statusCode).toBe(302);
+      expect(String(missingRollout.headers["location"])).toContain("error=");
+
+      const good = await form(
+        app,
+        cookie,
+        "key=daily_challenge&description=Test&value=7&rolloutPercent=100&enabled=true",
+      );
+      expect(good.statusCode).toBe(302);
+
+      const listed = await app.inject({ method: "GET", url: "/admin/games/demo/flags", headers: { cookie } });
+      expect(listed.body).toMatch(/daily_challenge/);
+
+      const publicRead = await app.inject({ method: "GET", url: "/v1/games/demo/flags" });
+      expect(JSON.parse(publicRead.body)).toEqual({
+        flags: [{ key: "daily_challenge", enabled: true, value: "7" }],
+      });
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("saves edits from the per-flag form using the path key", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      await form(app, cookie, "key=season_badge&value=s1&rolloutPercent=100&enabled=true");
+      const saved = await form(
+        app,
+        cookie,
+        "description=Season&value=s3&rolloutPercent=100&enabled=true",
+        "/admin/games/demo/flags/season_badge",
+      );
+      expect(saved.statusCode).toBe(302);
+      expect(String(saved.headers["location"])).not.toContain("error=");
+      const read = await app.inject({ method: "GET", url: "/v1/games/demo/flags" });
+      expect(JSON.parse(read.body)).toEqual({
+        flags: [{ key: "season_badge", enabled: true, value: "s3" }],
+      });
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("toggles a flag off without deleting it and withholds its value", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      await form(app, cookie, "key=beta_ui&value=soon&rolloutPercent=100&enabled=true");
+      const toggle = await form(app, cookie, "key=beta_ui", "/admin/games/demo/flags/toggle");
+      expect(toggle.statusCode).toBe(302);
+      const read = await app.inject({ method: "GET", url: "/v1/games/demo/flags" });
+      expect(JSON.parse(read.body)).toEqual({ flags: [{ key: "beta_ui", enabled: false, value: null }] });
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("deletes a flag and 404s a missing delete", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      await form(app, cookie, "key=gone_flag&rolloutPercent=100&enabled=true");
+      const deleted = await form(app, cookie, "key=gone_flag", "/admin/games/demo/flags/delete");
+      expect(deleted.statusCode).toBe(302);
+      const empty = await app.inject({ method: "GET", url: "/v1/games/demo/flags" });
+      expect(JSON.parse(empty.body)).toEqual({ flags: [] });
+      const missing = await form(app, cookie, "key=gone_flag", "/admin/games/demo/flags/delete");
+      expect(missing.statusCode).toBe(404);
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("resolves partial rollouts per signed-in player over HTTP", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const demo = game();
+    const app = await buildApp(config(dataDir, [demo]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      await form(app, cookie, "key=experiment&value=lab&rolloutPercent=50&enabled=true");
+      const login = await app.inject({
+        method: "POST",
+        url: "/v1/games/demo/auth/exchange",
+        payload: { authorizationCode: "alice" },
+      });
+      const token = (JSON.parse(login.body) as { accessToken: string }).accessToken;
+      const player = await verifyAccess(demo, token);
+      const expected = resolveFlags(
+        [
+          {
+            key: "experiment",
+            description: "",
+            enabled: 1,
+            rolloutPercent: 50,
+            value: "lab",
+            createdAt: 0,
+            updatedAt: 0,
+          },
+        ],
+        player,
+        demo.identitySalt,
+      )[0];
+      const anon = await app.inject({ method: "GET", url: "/v1/games/demo/flags" });
+      expect(JSON.parse(anon.body)).toEqual({ flags: [{ key: "experiment", enabled: false, value: null }] });
+      const authed = await app.inject({
+        method: "GET",
+        url: "/v1/games/demo/flags",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(JSON.parse(authed.body)).toEqual({ flags: [expected] });
+      const badToken = await app.inject({
+        method: "GET",
+        url: "/v1/games/demo/flags",
+        headers: { authorization: "Bearer not-a-token" },
+      });
+      expect(badToken.statusCode).toBe(401);
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("caps flags per game and keeps writes behind the admin session cookie", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    const app = await buildApp(config(dataDir, [game()]), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const unauth = await app.inject({
+        method: "POST",
+        url: "/admin/games/demo/flags",
+        payload: "key=sneaky&rolloutPercent=100&enabled=true",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      });
+      expect(unauth.statusCode).toBe(401);
+
+      for (let i = 0; i < FLAG_MAX; i += 1) {
+        const created = await form(app, cookie, `key=flag-${i}&rolloutPercent=100&enabled=true`);
+        expect(created.statusCode).toBe(302);
+        expect(String(created.headers["location"])).not.toContain("error=");
+      }
+      const overflow = await form(app, cookie, "key=flag-overflow&rolloutPercent=100&enabled=true");
+      expect(overflow.statusCode).toBe(302);
+      expect(String(overflow.headers["location"])).toContain("error=");
+      const replace = await form(app, cookie, "key=flag-0&value=ok&rolloutPercent=100&enabled=true");
+      expect(String(replace.headers["location"])).not.toContain("error=");
+    } finally {
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("returns fallback from isEnabled when the flag read fails", async () => {
+    const client = new BantamClient({
+      baseUrl: "http://flags.test",
+      gameId: "demo",
+      storage: { get: async () => null, set: async () => undefined, remove: async () => undefined },
+      fetch: async () => new Response("nope", { status: 500 }),
+    });
+    expect(await client.isEnabled("daily_challenge", true)).toBe(true);
+    await expect(client.getFlags()).rejects.toThrow();
+  });
+
+  it("404s for an unknown game", async () => {
+    const app = await buildApp(config(temp(), [game()]), { logger: false });
+    try {
+      const response = await app.inject({ method: "GET", url: "/v1/games/nope/flags" });
+      expect(response.statusCode).toBe(404);
+    } finally {
       await app.close();
     }
   }, 30_000);

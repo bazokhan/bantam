@@ -21,9 +21,18 @@ Probe, in order: `GET /healthz`, `GET /version`, `GET /openapi.json`. `/version.
 
 ## What Bantam is / is not
 
-**Is:** player auth and sessions; adapter-validated run submit; leaderboards (page, me, around-me); `DELETE` player; admin manifest hot-reload; Litestream backup.
+**Is:** player auth and sessions; adapter-validated run submit; leaderboards (page, me, around-me); per-game feature flags (`GET /v1/games/{gameId}/flags`, operator-written in the admin UI); `DELETE` player; admin manifest hot-reload; Litestream backup.
 
-**Is not:** ads, IAP, analytics funnels, Crashlytics, remote feature flags, or a first-class achievements API. Do not dump an analytics queue into a run payload.
+**Is not:** ads, IAP, analytics funnels, Crashlytics, or a first-class achievements API. Do not dump an analytics queue into a run payload.
+
+### Feature flags
+
+Per-game, server-resolved, read-only to clients. Operators set them at `/admin/games/{id}/flags`; clients read `GET /v1/games/{gameId}/flags` or call `bantam.getFlags()` / `bantam.isEnabled(key)`.
+
+- `enabled` is the rollout decision for that caller: master switch off ⇒ `false`; `100%` ⇒ `true` for everyone including signed-out; `1-99%` ⇒ resolved per signed-in player, always `false` when anonymous (no stable id to bucket).
+- Bucketing is `HMAC-SHA256(flagKey + ":" + playerId, ${secretPrefix}_IDENTITY_SALT)` — stable across restarts and instances, and not correlatable across games.
+- Never put a secret in a flag `value`; it is sent only when the flag resolves on for that caller. `description` is operator-facing and never sent.
+- Gameplay must stay playable when the flag read fails or login is cancelled. `isEnabled(key, fallback)` uses `fallback` when the flag is missing or the read fails. Treat a missing flag as `false` and keep a local default.
 
 ## Secrets (non-negotiable)
 

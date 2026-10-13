@@ -10,6 +10,29 @@ export type BoardDefinition = {
 
 export type DerivedBoardValue = { boardId: string; periodKey: string; value: number };
 
+// Server-side feature flags are per-game, operator-controlled, and read-only to
+// clients. Values are derived on the server; a client never submits a flag.
+export type FeatureFlag = {
+  key: string;
+  description: string;
+  enabled: boolean;
+  rolloutPercent: number;
+  value: string | null;
+};
+
+export type FeatureFlagRow = {
+  key: string;
+  description: string;
+  enabled: number;
+  rolloutPercent: number;
+  value: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+// What a client receives. `enabled` is the rollout decision for that caller.
+export type ResolvedFlag = { key: string; enabled: boolean; value: string | null };
+
 export type AdapterContext = { nowMs: number; gracePeriodHours: number };
 
 export type AdapterResult = {

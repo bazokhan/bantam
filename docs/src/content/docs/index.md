@@ -309,6 +309,7 @@ Bantam is structured so an agent can wire a game end-to-end without reading pros
 - ✓ validates run submissions against a server-side adapter contract
 - ✓ persists leaderboard entries per `(board_id, period_key, player_id)`
 - ✓ serves paginated leaderboards, player's rank, around-me
+- ✓ serves per-game feature flags resolved server-side, with deterministic per-player rollout
 - ✓ continuous backup to S3-compatible storage
 - ✗ does not validate the player's gameplay events (your adapter does)
 - ✗ does not require any external service, identity provider, or database engine
