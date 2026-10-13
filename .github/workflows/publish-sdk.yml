@@ -42,6 +42,8 @@ jobs:
           unset NODE_AUTH_TOKEN NPM_TOKEN
           NPMRC_PATH="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
           if [ -f "$NPMRC_PATH" ]; then
-            sed -i '/_authToken/d' "$NPMRC_PATH"
+            # setup-node's registry-url writes always-auth=true and an empty
+            # _authToken. Either line makes npm skip OIDC (404 or ENEEDAUTH).
+            printf 'registry=https://registry.npmjs.org/\n' > "$NPMRC_PATH"
           fi
           npm publish --access public

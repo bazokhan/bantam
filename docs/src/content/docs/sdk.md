@@ -66,7 +66,7 @@ git push origin sdk-v0.2.0
 
 The tag **must** match `packages/sdk/package.json` (`sdk-v` + semver). Workflow `publish-sdk.yml` runs `npm run verify` and `npm publish -w @gamercury/bantam-sdk --access public` with `id-token: write`. Provenance is attached automatically when the GitHub repo is public; a private repo still publishes, without provenance.
 
-Do not create a granular npm token for CI. Do not set `NODE_AUTH_TOKEN` on this workflow. Do not pass `registry-url` to `actions/setup-node` on this job: it writes `_authToken=${NODE_AUTH_TOKEN}` and npm then skips OIDC, which the registry reports as **404**.
+Do not create a granular npm token for CI. Do not set `NODE_AUTH_TOKEN` on this workflow. `actions/setup-node` `registry-url` writes `_authToken` and `always-auth=true`; either one makes npm skip OIDC (`404` or `ENEEDAUTH`). The publish step overwrites that userconfig before `npm publish`.
 
 ### Why not CircleCI or GitLab
 
