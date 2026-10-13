@@ -6,8 +6,11 @@ on:
   push:
     tags:
       - "sdk-v*"
+# Job permissions replace these; id-token must be write so Actions exports
+# ACTIONS_ID_TOKEN_REQUEST_* and npm can start OIDC.
 permissions:
   contents: read
+  id-token: write
 jobs:
   publish-sdk:
     runs-on: ubuntu-latest
@@ -16,12 +19,10 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      # Do not set registry-url. setup-node then writes
-      # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN} and exports a dummy
-      # NODE_AUTH_TOKEN, so npm skips OIDC and the registry returns 404.
       - uses: actions/setup-node@v4
         with:
           node-version: 24.18.1
+          registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
       - run: npm run verify
@@ -31,13 +32,16 @@ jobs:
           pkg="$(node -p "require('./packages/sdk/package.json').version")"
           test "$tag" = "$pkg"
       - name: Publish with OIDC trusted publishing
+        working-directory: packages/sdk
         run: |
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL is empty; id-token: write did not take effect" >&2
+            exit 1
+          fi
+          echo "npm=$(npm --version)"
           unset NODE_AUTH_TOKEN NPM_TOKEN
           NPMRC_PATH="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          if [ -n "$NPM_CONFIG_USERCONFIG" ]; then
-            unset NPM_CONFIG_USERCONFIG
-          fi
           if [ -f "$NPMRC_PATH" ]; then
             sed -i '/_authToken/d' "$NPMRC_PATH"
           fi
-          npm publish -w @gamercury/bantam-sdk --access public
+          npm publish --access public
