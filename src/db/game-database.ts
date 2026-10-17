@@ -22,6 +22,22 @@ export type SessionRow = {
   revoked_at: number | null;
 };
 export type LeaderboardEntry = { displayName: string; value: number; rank: number };
+export type WalletBalance = { currencyId: string; balance: number };
+export type WalletTransactionRow = {
+  id: number;
+  playerId: string;
+  currencyId: string;
+  amount: number;
+  reason: string;
+  idempotencyKey: string;
+  balanceAfter: number;
+  createdAt: number;
+};
+export type WalletMutationResult = {
+  balance: number;
+  transactionId: number;
+  replayed: boolean;
+};
 
 export class GameDatabase {
   readonly db: Database.Database;
@@ -74,6 +90,139 @@ export class GameDatabase {
   getPlayer(id: string): Player | undefined {
     const row = this.db.prepare("SELECT id, display_name displayName FROM players WHERE id=?").get(id);
     return row as Player | undefined;
+  }
+
+  getWallet(playerId: string): WalletBalance[] {
+    return this.db
+      .prepare("SELECT currency_id currencyId, balance FROM wallets WHERE player_id=? ORDER BY currency_id")
+      .all(playerId) as WalletBalance[];
+  }
+
+  listWalletTransactions(playerId: string, limit = 100): WalletTransactionRow[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+      throw new BantamError("invalid-limit", "Wallet transaction limit must be an integer from 1 to 500", 400);
+    return this.db
+      .prepare(
+        `SELECT id, player_id playerId, currency_id currencyId, amount, reason,
+          idempotency_key idempotencyKey, balance_after balanceAfter, created_at createdAt
+        FROM wallet_transactions WHERE player_id=? ORDER BY id DESC LIMIT ?`,
+      )
+      .all(playerId, limit) as WalletTransactionRow[];
+  }
+
+  creditCurrency(
+    playerId: string,
+    currencyId: string,
+    amount: number,
+    reason: string,
+    idempotencyKey: string,
+    now: number,
+  ): WalletMutationResult {
+    return this.mutateCurrency(playerId, currencyId, amount, reason, idempotencyKey, now);
+  }
+
+  debitCurrency(
+    playerId: string,
+    currencyId: string,
+    amount: number,
+    reason: string,
+    idempotencyKey: string,
+    now: number,
+  ): WalletMutationResult {
+    return this.mutateCurrency(playerId, currencyId, -amount, reason, idempotencyKey, now);
+  }
+
+  private mutateCurrency(
+    playerId: string,
+    currencyId: string,
+    delta: number,
+    reason: string,
+    idempotencyKey: string,
+    now: number,
+  ): WalletMutationResult {
+    if (!playerId || playerId.length > 128)
+      throw new BantamError("invalid-player", "Player id is required and must be at most 128 characters", 400);
+    if (!/^[a-z][a-z0-9_-]{0,47}$/.test(currencyId))
+      throw new BantamError("invalid-currency", "Currency id must be lowercase and use letters, digits, _ or -", 400);
+    if (!Number.isSafeInteger(delta) || delta === 0)
+      throw new BantamError("invalid-amount", "Currency amount must be a non-zero safe integer", 400);
+    if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(reason))
+      throw new BantamError("invalid-reason", "Transaction reason has an invalid format", 400);
+    if (
+      !idempotencyKey ||
+      idempotencyKey.length > 128 ||
+      idempotencyKey.trim() !== idempotencyKey ||
+      /[\u0000-\u001f\u007f]/u.test(idempotencyKey)
+    )
+      throw new BantamError("invalid-idempotency-key", "Idempotency key must be 1-128 printable characters", 400);
+    if (!Number.isSafeInteger(now) || now < 0)
+      throw new BantamError("invalid-timestamp", "Timestamp must be a non-negative safe integer", 400);
+
+    return this.db
+      .transaction((): WalletMutationResult => {
+        const player = this.db.prepare("SELECT 1 FROM players WHERE id=?").get(playerId);
+        if (!player) throw new BantamError("player-not-found", "Player not found", 404);
+
+        const previous = this.db
+          .prepare(
+            `SELECT id, currency_id currencyId, amount, reason, idempotency_key idempotencyKey,
+              balance_after balanceAfter
+            FROM wallet_transactions WHERE player_id=? AND idempotency_key=?`,
+          )
+          .get(playerId, idempotencyKey) as
+          | {
+              id: number;
+              currencyId: string;
+              amount: number;
+              reason: string;
+              idempotencyKey: string;
+              balanceAfter: number;
+            }
+          | undefined;
+        if (previous) {
+          if (
+            previous.currencyId !== currencyId ||
+            previous.amount !== delta ||
+            previous.reason !== reason
+          )
+            throw new BantamError(
+              "idempotency-conflict",
+              "Idempotency key was already used for a different currency operation",
+              409,
+            );
+          return { balance: previous.balanceAfter, transactionId: previous.id, replayed: true };
+        }
+
+        const wallet = this.db
+          .prepare("SELECT balance FROM wallets WHERE player_id=? AND currency_id=?")
+          .get(playerId, currencyId) as { balance: number } | undefined;
+        const currentBalance = wallet?.balance ?? 0;
+        if (delta < 0 && currentBalance < -delta)
+          throw new BantamError("insufficient-funds", "Insufficient currency balance", 409);
+        const nextBalance = currentBalance + delta;
+        if (!Number.isSafeInteger(nextBalance) || nextBalance < 0)
+          throw new BantamError("balance-overflow", "Currency balance would exceed the supported integer range", 409);
+
+        this.db
+          .prepare(
+            `INSERT INTO wallets(player_id, currency_id, balance, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?)
+            ON CONFLICT(player_id, currency_id) DO UPDATE SET
+              balance=excluded.balance, updated_at=excluded.updated_at`,
+          )
+          .run(playerId, currencyId, nextBalance, now, now);
+
+        const inserted = this.db
+          .prepare(
+            `INSERT INTO wallet_transactions(
+              player_id, currency_id, amount, reason, idempotency_key, balance_after, created_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(playerId, currencyId, delta, reason, idempotencyKey, nextBalance, now);
+
+        return { balance: nextBalance, transactionId: Number(inserted.lastInsertRowid), replayed: false };
+      })
+      .immediate();
   }
 
   insertRefresh(tokenHash: string, playerId: string, familyId: string, expiresAt: number, now: number): void {
