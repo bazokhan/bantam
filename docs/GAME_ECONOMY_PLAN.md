@@ -1,6 +1,6 @@
 # Game Economy Extension Plan
 
-Status: Proposed design; not implemented.
+Status: Phased implementation plan. Phase 1 is implemented on this branch; phases 2–5 remain planned pending review and merge.
 
 ## Goal
 
@@ -48,8 +48,8 @@ wallet_transactions
   currency_id
   amount              // signed integer delta
   reason              // mission_reward, item_purchase, iap_grant, admin_adjustment, ...
-  reference_id        // source operation / idempotency reference
-  metadata            // optional, bounded and validated
+  idempotency_key     // unique per player; protects against duplicate operations
+  balance_after       // balance after this transaction
   created_at
 ```
 
@@ -126,7 +126,7 @@ Do not expose ordinary client methods such as `setBalance` or unrestricted `gran
 
 ## Suggested implementation phases
 
-### Phase 1 — Economy foundation
+### Phase 1 — Economy foundation (implemented on this branch)
 - Define currency IDs and validation rules.
 - Add migrations for wallets and ledger.
 - Implement atomic credit/debit operations and idempotency.
