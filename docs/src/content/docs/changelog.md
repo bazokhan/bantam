@@ -21,7 +21,7 @@ Compatible API addition (minor). Additive migrations `004_economy.sql` and `005_
 - Google Play consumable verification via the Android Publisher API. Tokens are hashed; fulfillment is once; acknowledgment retries on resubmit; refunds are recorded and not auto-clawed back.
 - Admin player page for ledger, inventory, purchases, and audited `admin_adjustment` writes.
 - SDK adds `getWallet`, `getInventory`, `getStore`, `purchaseItem`, `useItem`, `claimReward`, and `submitIapPurchase`. Next npm publish is tag `sdk-v0.3.0`.
-- Docs: [Game economy](/economy/).
+- Docs: homepage and sidebar cover leaderboards, flags, economy, admin, and auth. Feature pages: [Leaderboards](/leaderboards/), [Feature flags](/flags/), [Game economy](/economy/).
 
 This entry describes the 0.3.0 source. Container, npm, and host deploy status are separate from this file.
 

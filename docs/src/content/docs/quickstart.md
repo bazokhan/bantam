@@ -1,6 +1,6 @@
 ---
 title: Your first game in 4 commands
-description: From a fresh container to a working leaderboard with one bash command and one browser click.
+description: From a fresh container to a working leaderboard — then flags and economy on the same game.
 ---
 
 Four steps take you from zero to a real, authoritative leaderboard. No manifest file required at boot. No `BANTAM_ADMIN_TOKEN` to copy. Each step is one commit-sized action.
@@ -85,6 +85,14 @@ curl http://localhost:3000/v1/games/demo/leaderboards/high_score \
 ```
 
 The synthesized adapter `generic:high_score` accepts any object with `high_score: <safe-integer>` and writes the player's best score to the `high_score` board. Multiple submissions from the same player only improve if the new value is strictly higher.
+
+## After the first board
+
+The same demo game already has flags and can take an economy catalog. Nothing else to install.
+
+- Open `/admin/games/demo/flags` and create a key. Clients call `GET /v1/games/demo/flags` or `bantam.getFlags()`. See [Feature flags](/flags/).
+- Add an `economy` object to the demo entry in the Manifest editor (currencies, items, offers). Clients call `getWallet` / `getStore` / `purchaseItem`. See [Game economy](/economy/).
+- Switch `authProvider` to `pgs-v2` when you leave the development provider. See [Manifest and PGS v2](/configuration/).
 
 ## What you get for free
 

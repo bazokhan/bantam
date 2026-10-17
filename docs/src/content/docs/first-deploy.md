@@ -113,13 +113,15 @@ curl http://localhost:3000/v1/games/demo/leaderboards/high_score \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Same session can then read flags (`GET /v1/games/demo/flags`) and, after you add an `economy` catalog on the demo game, wallet and store. See [Feature flags](/flags/) and [Game economy](/economy/).
+
 ## What survives a restart
 
 When mounted at `/data`, the following survive container restarts:
 
 - `/data/admin.sqlite` — admin accounts and active sessions.
 - `/data/games.json` — the manifest (when `BANTAM_CONFIG_FILE` is unset).
-- `/data/games/<id>/bantam.sqlite` — per-game database, including all player data and leaderboard entries.
+- `/data/games/<id>/bantam.sqlite` — per-game database, including players, leaderboard entries, feature flags, wallets, inventory, and IAP records.
 - `/data/litestream.generated.yml` — Litestream replica config.
 
 If you did not mount a persistent volume, all of the above are wiped on every restart.

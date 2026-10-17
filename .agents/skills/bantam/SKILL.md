@@ -1,11 +1,11 @@
 ---
 name: bantam
-description: Wires a game to Bantam authoritative leaderboards — auth, evidence-only run submit, GameAdapterV1, games.json, BantamClient, PGS v2 vs development auth. Use when adding leaderboards, adapters, BantamClient, games.json, or Play Games v2 to a Bantam-backed game.
+description: Wires a game to Bantam — auth, evidence-only run submit, leaderboards, feature flags, optional economy (wallet, shop, Google Play IAP), GameAdapterV1, games.json, BantamClient, PGS v2 vs development auth. Use when adding leaderboards, flags, economy, adapters, BantamClient, games.json, or Play Games v2 to a Bantam-backed game.
 ---
 
 # Bantam
 
-Game-agnostic leaderboard backend. Clients submit **evidence**. A versioned server adapter **derives** board values inside the run transaction. No game-specific code ships in this repository.
+Game-agnostic backend for leaderboards, feature flags, and an optional server-owned economy. Clients submit **evidence**. A versioned server adapter **derives** board values inside the run transaction. Catalog prices and IAP grants are server-derived. No game-specific code ships in this repository.
 
 Read [reference.md](reference.md) for OpenAPI paths, manifest schema, `GameAdapterV1`, and SDK methods. Prefer live `GET {base}/openapi.json` over a remembered schema.
 

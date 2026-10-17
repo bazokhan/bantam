@@ -1,6 +1,6 @@
 # Bantam reference
 
-Fetch `GET {base}/openapi.json` before relying on this file. Docs site: https://bantam.trugraph.io (slugs: adapters, generic-boards, adapter-authoring, configuration, admin-dashboard, reference, security).
+Fetch `GET {base}/openapi.json` before relying on this file. Docs site: https://bantam.trugraph.io (slugs: index, leaderboards, flags, economy, adapters, generic-boards, adapter-authoring, configuration, admin-dashboard, sdk, reference, security).
 
 ## Public HTTP
 

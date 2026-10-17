@@ -1,6 +1,6 @@
 ---
 title: Admin dashboard
-description: Session-cookie admin UI for inspecting games, adapters, runs, and editing the manifest.
+description: Session-cookie admin UI for the manifest, feature flags, boards, runs, and player economy.
 ---
 
 The framework includes a session-cookie admin UI on the same port as the API. It is reachable at `/admin/`.
