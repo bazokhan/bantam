@@ -2,6 +2,7 @@ import { accessSync, constants, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { EconomyCatalogSchema } from "../services/economy.js";
 
 const BoardDefSchema = Type.Object(
   {
@@ -34,6 +35,7 @@ const GameSchema = Type.Object(
     secretPrefix: Type.String({ pattern: "^[A-Z][A-Z0-9_]{1,47}$" }),
     gracePeriodHours: Type.Integer({ minimum: 0, maximum: 168 }),
     authProvider: Type.Union([Type.Literal("pgs-v2"), Type.Literal("development")]),
+    economy: Type.Optional(EconomyCatalogSchema),
   },
   { additionalProperties: false },
 );

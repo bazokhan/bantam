@@ -2,6 +2,7 @@ import { accessSync, constants, readFileSync, rmSync, writeFileSync } from "node
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { BantamError } from "./errors.js";
+import { EconomyCatalogSchema, parseEconomyCatalog } from "./services/economy.js";
 import type { GameManifestEntry, RuntimeGame, AdapterSpec } from "./types.js";
 
 const BoardDefSchema = Type.Object(
@@ -40,6 +41,7 @@ const GameSchema = Type.Object(
     secretPrefix: Type.String({ pattern: "^[A-Z][A-Z0-9_]{1,47}$" }),
     gracePeriodHours: Type.Integer({ minimum: 0, maximum: 168 }),
     authProvider: Type.Union([Type.Literal("pgs-v2"), Type.Literal("development")]),
+    economy: Type.Optional(EconomyCatalogSchema),
   },
   { additionalProperties: false },
 );
@@ -184,6 +186,7 @@ function buildLoadedConfig(
     const adapters: AdapterSpec[] = (game.adapters as unknown[]).map((value, idx) =>
       validateAdapterSpec(value, `/games/${i}/adapters/${idx}`),
     );
+    const economy = parseEconomyCatalog(game.economy, `/games/${i}/economy`);
     const readSecret = (suffix: string): string => {
       const key = `${game.secretPrefix}_${suffix}`;
       const value = env[key];
@@ -194,6 +197,7 @@ function buildLoadedConfig(
     const runtime: RuntimeGame = {
       ...game,
       adapters,
+      ...(economy ? { economy } : {}),
       identitySalt: readSecret("IDENTITY_SALT"),
       sessionSecret: readSecret("SESSION_SECRET"),
       cursorSecret: readSecret("CURSOR_SECRET"),
@@ -287,8 +291,10 @@ export function resolveGameSecrets(
       );
     return value;
   };
+  const economy = parseEconomyCatalog(game.economy, `/games/${game.id}/economy`);
   const out: RuntimeGame = {
     ...game,
+    ...(economy ? { economy } : {}),
     identitySalt: read("IDENTITY_SALT"),
     sessionSecret: read("SESSION_SECRET"),
     cursorSecret: read("CURSOR_SECRET"),

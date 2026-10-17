@@ -11,6 +11,20 @@ description: Service, API, adapter, schema, and documentation versions.
 - Database migrations are monotonic and checksummed. They are not tied one-to-one to the service version.
 - Documentation snapshots must pass OpenAPI reconciliation for the release commit.
 
+## 0.3.0 - game economy
+
+Compatible API addition (minor). Additive migrations `004_economy.sql` and `005_economy_shop.sql`.
+
+- Per-player wallets and an append-only currency ledger. Credits and debits are positive safe integers, non-negative, and idempotent per player.
+- Manifest `economy` catalog for currencies, items, offers, claimable rewards, and Google Play IAP products. Inventory and store purchases persist in SQLite.
+- Player API: `GET /economy/wallet|inventory|store`, `POST /economy/purchases`, `POST /economy/items/use`, `POST /economy/rewards/claim`, `POST /economy/iap`.
+- Google Play consumable verification via the Android Publisher API. Tokens are hashed; fulfillment is once; acknowledgment retries on resubmit; refunds are recorded and not auto-clawed back.
+- Admin player page for ledger, inventory, purchases, and audited `admin_adjustment` writes.
+- SDK adds `getWallet`, `getInventory`, `getStore`, `purchaseItem`, `useItem`, `claimReward`, and `submitIapPurchase`. Next npm publish is tag `sdk-v0.3.0`.
+- Docs: [Game economy](/economy/).
+
+This entry describes the 0.3.0 source. Container, npm, and host deploy status are separate from this file.
+
 ## 0.2.0 - feature flags
 
 Compatible API addition (minor). Additive migration `003_feature_flags.sql`.

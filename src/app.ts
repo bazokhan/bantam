@@ -17,7 +17,16 @@ import type { LoadedConfig } from "./config.js";
 import { GameDatabase } from "./db/game-database.js";
 import { BantamError } from "./errors.js";
 import { decodeCursor, encodeCursor } from "./services/cursor.js";
+import {
+  catalogIapProduct,
+  catalogItem,
+  catalogOffer,
+  catalogReward,
+  googlePlayServiceAccountEnv,
+  publicOffers,
+} from "./services/economy.js";
 import { resolveFlags } from "./services/feature-flags.js";
+import { hashPurchaseToken, verifierFromEnv, type IapVerifier } from "./services/iap.js";
 import type { BoardDefinition, GameAdapterV1, RuntimeGame } from "./types.js";
 import { canonicalJson, derivePlayerId, hmac, sha256 } from "./util/crypto.js";
 import { sanitizeDisplayName } from "./util/display-name.js";
@@ -70,6 +79,61 @@ const AroundQuery = Type.Object(
   },
   { additionalProperties: false },
 );
+const EconomyRequestId = Type.String({ minLength: 1, maxLength: 128 });
+const WalletResponse = Type.Object(
+  {
+    balances: Type.Array(
+      Type.Object({ currencyId: Type.String(), balance: Type.Integer() }, { additionalProperties: false }),
+    ),
+  },
+  { additionalProperties: false },
+);
+const InventoryResponse = Type.Object(
+  {
+    items: Type.Array(
+      Type.Object({ itemId: Type.String(), quantity: Type.Integer() }, { additionalProperties: false }),
+    ),
+  },
+  { additionalProperties: false },
+);
+const StoreResponse = Type.Object(
+  {
+    offers: Type.Array(
+      Type.Object(
+        {
+          id: Type.String(),
+          itemId: Type.String(),
+          quantity: Type.Integer(),
+          priceCurrencyId: Type.String(),
+          priceAmount: Type.Integer(),
+          remainingPurchases: Type.Union([Type.Integer(), Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+const PurchaseBody = Type.Object(
+  { offerId: Type.String({ minLength: 1, maxLength: 48 }), requestId: EconomyRequestId },
+  { additionalProperties: false },
+);
+const UseItemBody = Type.Object(
+  { itemId: Type.String({ minLength: 1, maxLength: 48 }), requestId: EconomyRequestId },
+  { additionalProperties: false },
+);
+const ClaimRewardBody = Type.Object(
+  { rewardId: Type.String({ minLength: 1, maxLength: 48 }), requestId: EconomyRequestId },
+  { additionalProperties: false },
+);
+const IapBody = Type.Object(
+  {
+    purchaseToken: Type.String({ minLength: 8, maxLength: 4096 }),
+    productId: Type.String({ minLength: 1, maxLength: 128 }),
+    provider: Type.Optional(Type.Literal("google_play")),
+  },
+  { additionalProperties: false },
+);
 const FlagsResponse = Type.Object(
   {
     flags: Type.Array(
@@ -86,8 +150,19 @@ const FlagsResponse = Type.Object(
   { additionalProperties: false },
 );
 
-export type RuntimeT = { game: RuntimeGame; db: GameDatabase; adapters: ReadonlyMap<string, GameAdapterV1> };
+export type RuntimeT = {
+  game: RuntimeGame;
+  db: GameDatabase;
+  adapters: ReadonlyMap<string, GameAdapterV1>;
+  iapVerifier?: IapVerifier;
+};
 export type Runtime = RuntimeT;
+export type IapVerifierFactory = (game: RuntimeGame) => IapVerifier | undefined;
+
+function defaultIapVerifier(game: RuntimeGame): IapVerifier | undefined {
+  if (!game.economy?.iapProducts?.some((product) => product.provider === "google_play")) return undefined;
+  return verifierFromEnv(googlePlayServiceAccountEnv(game.secretPrefix));
+}
 
 // Container for the per-game runtimes. Exposes the underlying Map directly
 // so admin can iterate or mutate via the same surface; replaceAll is the only
@@ -108,7 +183,11 @@ class RuntimeRegistry {
   }
   async replaceAll(
     newGames: RuntimeGame[],
-    ctx: { dataDir: string; migrationsDirectory: string },
+    ctx: {
+      dataDir: string;
+      migrationsDirectory: string;
+      iapVerifierFactory?: IapVerifierFactory;
+    },
   ): Promise<{ added: string[]; removed: string[]; kept: string[] }> {
     const next = new Map<string, RuntimeGame>();
     for (const game of newGames) next.set(game.id, game);
@@ -133,10 +212,12 @@ class RuntimeRegistry {
         this.map.delete(id);
       }
       const adapters = await loadAdaptersForGame(id, game.adapters);
+      const iapVerifier = (ctx.iapVerifierFactory ?? defaultIapVerifier)(game);
       const runtime: Runtime = {
         game,
         db: new GameDatabase(join(ctx.dataDir, "games", id, "bantam.sqlite"), ctx.migrationsDirectory),
         adapters,
+        ...(iapVerifier ? { iapVerifier } : {}),
       };
       this.map.set(id, runtime);
       added.push(id);
@@ -151,7 +232,11 @@ class RuntimeRegistry {
 
 export async function buildApp(
   config: LoadedConfig,
-  options: { migrationsDirectory?: string; logger?: boolean } = {},
+  options: {
+    migrationsDirectory?: string;
+    logger?: boolean;
+    iapVerifierFactory?: IapVerifierFactory;
+  } = {},
 ): Promise<FastifyInstance> {
   const logger =
     options.logger === false
@@ -187,7 +272,7 @@ export async function buildApp(
       info: {
         title: "Bantam Game Services",
         description: "Small footprint. Authoritative results.",
-        version: "0.2.0",
+        version: "0.3.0",
       },
       tags: [
         { name: "system" },
@@ -195,6 +280,7 @@ export async function buildApp(
         { name: "leaderboards" },
         { name: "players" },
         { name: "flags" },
+        { name: "economy" },
       ],
     },
   });
@@ -204,6 +290,7 @@ export async function buildApp(
   await registry.replaceAll([...config.games.values()], {
     dataDir: config.dataDir,
     migrationsDirectory,
+    ...(options.iapVerifierFactory ? { iapVerifierFactory: options.iapVerifierFactory } : {}),
   });
   app.addHook("onClose", async () => {
     registry.closeAll();
@@ -298,7 +385,7 @@ export async function buildApp(
   });
   app.get("/version", { schema: { tags: ["system"] } }, async () => ({
     name: "Bantam Game Services",
-    version: "0.2.0",
+    version: "0.3.0",
     commit: process.env.BANTAM_GIT_SHA ?? "local",
     builtAt: process.env.BANTAM_BUILT_AT ?? "unknown",
     adapters: listLoadedAdapters().map(({ id, version }) => ({ id, version })),
@@ -450,6 +537,171 @@ export async function buildApp(
     },
   );
 
+  app.get<{ Params: Static<typeof GameParams> }>(
+    "/v1/games/:gameId/economy/wallet",
+    { schema: { tags: ["economy"], params: GameParams, response: { 200: WalletResponse } } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await playerId(request.headers.authorization, run.game);
+      run.db.takeRate(player, "read", 120, Date.now());
+      return { balances: run.db.getWallet(player) };
+    },
+  );
+  app.get<{ Params: Static<typeof GameParams> }>(
+    "/v1/games/:gameId/economy/inventory",
+    { schema: { tags: ["economy"], params: GameParams, response: { 200: InventoryResponse } } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await playerId(request.headers.authorization, run.game);
+      run.db.takeRate(player, "read", 120, Date.now());
+      return { items: run.db.getInventory(player) };
+    },
+  );
+  app.get<{ Params: Static<typeof GameParams> }>(
+    "/v1/games/:gameId/economy/store",
+    { schema: { tags: ["economy"], params: GameParams, response: { 200: StoreResponse } } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await playerId(request.headers.authorization, run.game);
+      run.db.takeRate(player, "read", 120, Date.now());
+      return { offers: publicOffers(run.game.economy, run.db.offerPurchaseCounts(player)) };
+    },
+  );
+  app.post<{ Params: Static<typeof GameParams>; Body: Static<typeof PurchaseBody> }>(
+    "/v1/games/:gameId/economy/purchases",
+    { schema: { tags: ["economy"], params: GameParams, body: PurchaseBody } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await playerId(request.headers.authorization, run.game);
+      run.db.takeRate(player, "economy", 30, Date.now());
+      const offer = catalogOffer(run.game.economy, request.body.offerId);
+      const item = catalogItem(run.game.economy, offer.itemId);
+      const result = run.db.purchaseOffer(player, offer, item, request.body.requestId, Date.now());
+      return {
+        purchaseId: result.purchaseId,
+        itemId: result.itemId,
+        quantity: result.quantity,
+        quantityAfter: result.quantityAfter,
+        wallet: { currencyId: offer.priceCurrencyId, balance: result.wallet.balance },
+        replayed: result.replayed,
+      };
+    },
+  );
+  app.post<{ Params: Static<typeof GameParams>; Body: Static<typeof UseItemBody> }>(
+    "/v1/games/:gameId/economy/items/use",
+    { schema: { tags: ["economy"], params: GameParams, body: UseItemBody } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await playerId(request.headers.authorization, run.game);
+      run.db.takeRate(player, "economy", 30, Date.now());
+      const item = catalogItem(run.game.economy, request.body.itemId);
+      return run.db.useItem(player, item, request.body.requestId, Date.now());
+    },
+  );
+  app.post<{ Params: Static<typeof GameParams>; Body: Static<typeof ClaimRewardBody> }>(
+    "/v1/games/:gameId/economy/rewards/claim",
+    { schema: { tags: ["economy"], params: GameParams, body: ClaimRewardBody } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await playerId(request.headers.authorization, run.game);
+      run.db.takeRate(player, "economy", 30, Date.now());
+      if (!run.game.economy) throw new BantamError("reward-not-found", "Reward is not claimable", 404);
+      const reward = catalogReward(run.game.economy, request.body.rewardId);
+      const result = run.db.claimReward(player, reward, run.game.economy, request.body.requestId, Date.now());
+      return {
+        rewardId: result.rewardId,
+        wallet: result.wallet,
+        inventory: result.inventory,
+        replayed: result.replayed,
+      };
+    },
+  );
+  app.post<{ Params: Static<typeof GameParams>; Body: Static<typeof IapBody> }>(
+    "/v1/games/:gameId/economy/iap",
+    { schema: { tags: ["economy"], params: GameParams, body: IapBody } },
+    async (request) => {
+      const run = runtime(request.params.gameId);
+      const player = await playerId(request.headers.authorization, run.game);
+      run.db.takeRate(player, "economy", 20, Date.now());
+      const provider = request.body.provider ?? "google_play";
+      if (provider !== "google_play")
+        throw new BantamError("iap-provider-unsupported", "Only google_play IAP is supported", 400);
+      const catalog = run.game.economy;
+      if (!catalog) throw new BantamError("iap-product-not-found", "IAP product is not configured", 404);
+      const product = catalogIapProduct(catalog, request.body.productId, provider);
+      const tokenHash = hashPurchaseToken(provider, request.body.purchaseToken);
+      const existing = run.db.getIapPurchase(provider, tokenHash);
+      const verifyInput = {
+        packageName: product.packageName,
+        productId: product.providerProductId,
+        purchaseToken: request.body.purchaseToken,
+      };
+      if (existing?.fulfillmentState === "fulfilled") {
+        if (existing.playerId !== player)
+          throw new BantamError("iap-conflict", "Purchase token is already bound to another player", 409);
+        if (existing.acknowledgeState !== "acknowledged") {
+          if (!run.iapVerifier)
+            throw new BantamError("iap-not-configured", "IAP verification is not configured", 503);
+          try {
+            await run.iapVerifier.acknowledge(verifyInput);
+            run.db.markIapAcknowledged(provider, tokenHash, Date.now(), true);
+          } catch {
+            run.db.markIapAcknowledged(provider, tokenHash, Date.now(), false);
+          }
+        }
+        return {
+          productId: product.id,
+          fulfillmentState: "fulfilled",
+          acknowledgeState:
+            run.db.getIapPurchase(provider, tokenHash)?.acknowledgeState ?? existing.acknowledgeState,
+          wallet: run.db.getWallet(player),
+          inventory: run.db.getInventory(player),
+          replayed: true,
+        };
+      }
+      if (!run.iapVerifier)
+        throw new BantamError("iap-not-configured", "IAP verification is not configured", 503);
+      const verified = await run.iapVerifier.verify(verifyInput);
+      if (verified.productId !== product.providerProductId)
+        throw new BantamError("iap-invalid", "Verified product does not match the catalog", 409);
+      if (verified.purchaseState === "pending")
+        throw new BantamError("iap-pending", "Purchase is still pending with the provider", 409);
+      if (verified.purchaseState === "canceled") {
+        run.db.recordSkippedIap({
+          playerId: player,
+          product,
+          purchaseTokenHash: tokenHash,
+          orderId: verified.orderId,
+          verificationState: "refunded",
+          now: Date.now(),
+        });
+        throw new BantamError("iap-refunded", "Purchase was refunded or canceled", 409);
+      }
+      const result = run.db.fulfillIap({
+        playerId: player,
+        product,
+        catalog,
+        purchaseTokenHash: tokenHash,
+        orderId: verified.orderId,
+        now: Date.now(),
+      });
+      try {
+        if (!verified.acknowledged) await run.iapVerifier.acknowledge(verifyInput);
+        run.db.markIapAcknowledged(provider, tokenHash, Date.now(), true);
+      } catch {
+        run.db.markIapAcknowledged(provider, tokenHash, Date.now(), false);
+      }
+      return {
+        productId: product.id,
+        fulfillmentState: result.purchase.fulfillmentState,
+        acknowledgeState: run.db.getIapPurchase(provider, tokenHash)?.acknowledgeState ?? "pending",
+        wallet: result.wallet,
+        inventory: result.inventory,
+        replayed: result.replayed,
+      };
+    },
+  );
+
   // Read-only. Clients never write flags; operators do that through the admin
   // UI. Bearer is optional so signed-out clients still get fully-rolled-out
   // flags instead of an error, matching the public leaderboard read policy.
@@ -497,6 +749,7 @@ export async function buildApp(
       const result = await registry.replaceAll(enriched, {
         dataDir: config.dataDir,
         migrationsDirectory,
+        ...(options.iapVerifierFactory ? { iapVerifierFactory: options.iapVerifierFactory } : {}),
       });
       app.log.info(
         { added: result.added, removed: result.removed, kept: result.kept.length },

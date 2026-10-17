@@ -12,7 +12,28 @@
       ],
       "secretPrefix": "BANTAM_GAME_DEMO",
       "gracePeriodHours": 24,
-      "authProvider": "development"
+      "authProvider": "development",
+      "economy": {
+        "currencies": [{ "id": "coins" }],
+        "items": [{ "id": "extra_life", "type": "consumable", "stackable": true, "usable": true }],
+        "offers": [
+          {
+            "id": "life_pack",
+            "itemId": "extra_life",
+            "quantity": 1,
+            "priceCurrencyId": "coins",
+            "priceAmount": 50,
+            "active": true
+          }
+        ],
+        "rewards": [
+          {
+            "id": "starter_pack",
+            "grants": [{ "kind": "currency", "currencyId": "coins", "amount": 100 }],
+            "maxClaims": 1
+          }
+        ]
+      }
     },
     {
       "id": "echo-demo",

@@ -19,17 +19,24 @@ The generated [OpenAPI JSON](/reference/bantam.openapi.json) is copied from the 
 
 All paths begin `/v1/games/{gameId}`.
 
-| Method | Path                                | Purpose                                        |
-| ------ | ----------------------------------- | ---------------------------------------------- |
-| POST   | `/auth/exchange`                    | Exchange a PGS server auth code                |
-| POST   | `/auth/refresh`                     | Rotate a refresh token                         |
-| POST   | `/auth/logout`                      | Revoke the refresh family                      |
-| POST   | `/runs/{adapterId}`                 | Submit evidence for authoritative derivation   |
-| GET    | `/flags`                            | Read server-resolved feature flags (public)    |
-| GET    | `/leaderboards/{boardId}`           | Page through entries (public; Bearer optional) |
-| GET    | `/leaderboards/{boardId}/me`        | Get the caller’s rank (Bearer)                 |
-| GET    | `/leaderboards/{boardId}/around-me` | Get neighboring entries (Bearer)               |
-| DELETE | `/player`                           | Delete the caller’s Bantam data                |
+| Method | Path                                | Purpose                                            |
+| ------ | ----------------------------------- | -------------------------------------------------- |
+| POST   | `/auth/exchange`                    | Exchange a PGS server auth code                    |
+| POST   | `/auth/refresh`                     | Rotate a refresh token                             |
+| POST   | `/auth/logout`                      | Revoke the refresh family                          |
+| POST   | `/runs/{adapterId}`                 | Submit evidence for authoritative derivation       |
+| GET    | `/flags`                            | Read server-resolved feature flags (public)        |
+| GET    | `/leaderboards/{boardId}`           | Page through entries (public; Bearer optional)     |
+| GET    | `/leaderboards/{boardId}/me`        | Get the caller’s rank (Bearer)                     |
+| GET    | `/leaderboards/{boardId}/around-me` | Get neighboring entries (Bearer)                   |
+| DELETE | `/player`                           | Delete the caller’s Bantam data                    |
+| GET    | `/economy/wallet`                   | Integer balances (Bearer)                          |
+| GET    | `/economy/inventory`                | Owned items (Bearer)                               |
+| GET    | `/economy/store`                    | Active offers and authoritative prices (Bearer)    |
+| POST   | `/economy/purchases`                | `{ offerId, requestId }` (Bearer)                  |
+| POST   | `/economy/items/use`                | `{ itemId, requestId }` (Bearer)                   |
+| POST   | `/economy/rewards/claim`            | `{ rewardId, requestId }` (Bearer)                 |
+| POST   | `/economy/iap`                      | `{ purchaseToken, productId, provider? }` (Bearer) |
 
 Errors use `{ "error": { "code", "message", "requestId" } }`. Treat `401` as a refresh or reauthentication signal, `409 run-id-conflict` as tampering or a broken client ID generator, and `429` as retryable with backoff.
 
@@ -46,6 +53,12 @@ Flags are set by operators in the admin dashboard, never by clients. `enabled` i
 - `value` is the configuration string only when `enabled` is `true` for this caller; otherwise it is `null`.
 
 The endpoint accepts an optional `Bearer` token. Send one when signed in; without it you still get fully-rolled-out flags, so gameplay works with login cancelled. Never put a secret in `value`. Operators may define at most 64 flags per game; rollout percent on write must be an integer `0`–`100`.
+
+### Economy
+
+Optional per-game catalog in the manifest (`economy`). Persistence is additive migration `005_economy_shop.sql`. Clients never submit a price or balance. See [Game economy](/economy/) for the catalog shape, IAP flow, and threat model.
+
+`requestId` is a per-player idempotency key. Catalog `rewards` are allowlisted and capped; they are not mission-completion hooks. IAP grants happen only after Google Play verification. Tokens are hashed, never logged.
 
 ## TypeScript SDK
 
@@ -75,6 +88,10 @@ const season = flags.find((f) => f.key === "season_badge" && f.enabled)?.value ?
 if (await bantam.isEnabled("daily_challenge")) {
   enableDailyMode();
 }
+
+const wallet = await bantam.getWallet();
+await bantam.purchaseItem("life_pack", crypto.randomUUID());
+await bantam.submitIapPurchase(playPurchaseToken, "coins_100");
 ```
 
 ## Committed SDK snapshot

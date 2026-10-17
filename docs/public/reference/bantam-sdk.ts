@@ -4,6 +4,44 @@ export type AuthResult =
   | { status: "cancelled" | "unavailable"; reason?: string };
 export type LeaderboardEntry = { displayName: string; value: number; rank: number };
 export type FeatureFlag = { key: string; enabled: boolean; value: string | null };
+export type WalletBalance = { currencyId: string; balance: number };
+export type InventoryItem = { itemId: string; quantity: number };
+export type StoreOffer = {
+  id: string;
+  itemId: string;
+  quantity: number;
+  priceCurrencyId: string;
+  priceAmount: number;
+  remainingPurchases: number | null;
+};
+export type PurchaseResult = {
+  purchaseId: number;
+  itemId: string;
+  quantity: number;
+  quantityAfter: number;
+  wallet: WalletBalance;
+  replayed: boolean;
+};
+export type UseItemResult = {
+  itemId: string;
+  consumedQuantity: number;
+  quantityAfter: number;
+  replayed: boolean;
+};
+export type ClaimRewardResult = {
+  rewardId: string;
+  wallet: WalletBalance[];
+  inventory: InventoryItem[];
+  replayed: boolean;
+};
+export type IapSubmitResult = {
+  productId: string;
+  fulfillmentState: string;
+  acknowledgeState: string;
+  wallet: WalletBalance[];
+  inventory: InventoryItem[];
+  replayed: boolean;
+};
 export type CandidateValue = {
   boardId: string;
   periodKey: string;
@@ -202,6 +240,31 @@ export class BantamClient {
     } catch {
       return fallback;
     }
+  }
+
+  async getWallet(): Promise<{ balances: WalletBalance[] }> {
+    return this.request("/economy/wallet");
+  }
+  async getInventory(): Promise<{ items: InventoryItem[] }> {
+    return this.request("/economy/inventory");
+  }
+  async getStore(): Promise<{ offers: StoreOffer[] }> {
+    return this.request("/economy/store");
+  }
+  async purchaseItem(offerId: string, requestId: string): Promise<PurchaseResult> {
+    return this.request("/economy/purchases", { method: "POST", body: { offerId, requestId } });
+  }
+  async useItem(itemId: string, requestId: string): Promise<UseItemResult> {
+    return this.request("/economy/items/use", { method: "POST", body: { itemId, requestId } });
+  }
+  async claimReward(rewardId: string, requestId: string): Promise<ClaimRewardResult> {
+    return this.request("/economy/rewards/claim", { method: "POST", body: { rewardId, requestId } });
+  }
+  async submitIapPurchase(purchaseToken: string, productId: string): Promise<IapSubmitResult> {
+    return this.request("/economy/iap", {
+      method: "POST",
+      body: { purchaseToken, productId, provider: "google_play" },
+    });
   }
 
   private async request<T = void>(
