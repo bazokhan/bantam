@@ -73,8 +73,8 @@ That filename must match `.github/workflows/publish-sdk.yml` exactly (basename o
 Then bump `packages/sdk/package.json` `version` (incompatible HTTP/SDK changes are a **major**), verify, and tag:
 
 ```bash
-git tag sdk-v0.2.0
-git push origin sdk-v0.2.0
+git tag sdk-v0.3.0
+git push origin sdk-v0.3.0
 ```
 
 The tag **must** match `packages/sdk/package.json` (`sdk-v` + semver). Workflow `publish-sdk.yml` runs `npm run verify` and `npm publish -w @gamercury/bantam-sdk --access public` with `id-token: write`. Provenance is attached automatically when the GitHub repo is public; a private repo still publishes, without provenance.

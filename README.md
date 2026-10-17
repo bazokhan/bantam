@@ -2,7 +2,7 @@
 
 **Small footprint. Authoritative results.**
 
-Bantam is a single-writer game backend for authenticated, server-validated leaderboards. It runs as one non-root container, isolates each title in its own SQLite database, and continuously replicates those databases with Litestream. The framework is game-agnostic: any game dev self-hosts it, drops adapter files into a mounted folder, and ships.
+Bantam is a single-writer game backend for authenticated, server-validated leaderboards, per-game feature flags, and an optional server-owned economy (wallets, inventory, virtual shop, Google Play IAP). It runs as one non-root container, isolates each title in its own SQLite database, and continuously replicates those databases with Litestream. The framework is game-agnostic: any game dev self-hosts it, drops adapter files into a mounted folder, and ships.
 
 ## Local start
 
@@ -47,9 +47,9 @@ The dashboard lists games, loaded adapters, per-game health, and recent runs (no
 
 Per-game **feature flags** live at `/admin/games/{id}/flags`. Operators create, edit, enable/disable, and delete flags; clients read them from `GET /v1/games/{gameId}/flags` (optional `Bearer`) or via `bantam.getFlags()`. A flag below 100% rollout resolves per signed-in player from `HMAC-SHA256(flagKey + ":" + playerId, ${secretPrefix}_IDENTITY_SALT)`, so the answer is stable across restarts and instances; anonymous callers always see `false` for those. `value` is sent only when the flag resolves on for that caller. Flags take effect on the next client read — no restart. Never put a secret in a flag `value`.
 
-Today the game page only renders a top-10 for **generic** adapters, so file-adapter titles (boards, players, auth flips) look empty even when SQLite has data. The Manifest editor is a JSON textarea. Make that UI useful without secrets: `ADMIN_DASHBOARD_PLAN.md`.
+Optional **economy** catalogs live on the game entry in `games.json`. Clients read wallet, inventory, and store prices from `/v1/games/{gameId}/economy/*` or via `bantam.getWallet()` / `getInventory()` / `getStore()`. Purchases send an offer id and a `requestId`, never a price. Google Play IAP tokens go to `POST /economy/iap` for Android Publisher verification. Operators inspect and adjust a player at `/admin/games/{id}/players/{playerId}` (`admin_adjustment` only). Docs: `docs/src/content/docs/economy.md`.
 
-If you mount a `games.json` file into the container read-only, the editor shows a banner and disables save; unset `BANTAM_CONFIG_FILE` and let the server manage `/data/games.json` to edit through the UI.
+The game page lists boards from every loaded adapter (top 50 per board). The Manifest editor is a form plus an Advanced JSON panel. If you mount a `games.json` file into the container read-only, the editor shows a banner and disables save; unset `BANTAM_CONFIG_FILE` and let the server manage `/data/games.json` to edit through the UI.
 
 ## Verification
 

@@ -27,6 +27,18 @@ Confirm there is only one Bantam replica and no external process writes the live
 
 Check the exact deployment/game replica prefix, bucket endpoint, region, path-style mode, and credentials. `backup-status` must show the configured database. A successful MinIO test proves the workflow, not the production bucket configuration.
 
+## IAP submit returns 503 `iap-not-configured`
+
+The game catalog lists a Google Play product but `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` is missing. Set the service-account JSON in the deployment secret store (never commit it), restart the container, and retry. Presence is shown on `/admin/games/:id` as a required env key; the value is never rendered. See [Game economy](/economy/#google-play-iap).
+
+## Shop purchase returns 409 `insufficient-funds`
+
+The catalog price is authoritative. Credit the wallet through a catalog reward, IAP, or an admin adjustment — the client cannot send a balance. Repeating the same `requestId` after a successful purchase returns the original outcome (`replayed: true`), not a second grant.
+
+## Feature flags always resolve `false`
+
+Check the master switch, rollout percent, and whether the client sent a Bearer token. Flags below 100% are `false` for anonymous callers. `isEnabled` also returns its fallback when the request fails. Never put a secret in `value`. See [Feature flags](/flags/).
+
 ## The SDK queue never flushes
 
 Check network availability, optional sign-in result, session refresh, adapter id, and expiry. Authentication cancellation is intentionally non-fatal and leaves the queue intact.

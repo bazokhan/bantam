@@ -1,6 +1,6 @@
 ---
 title: API and SDK reference
-description: HTTP endpoints, errors, sessions, and typed client usage.
+description: HTTP endpoints for auth, runs, leaderboards, flags, economy, and typed client usage.
 ---
 
 The generated [OpenAPI JSON](/reference/bantam.openapi.json) is copied from the service repository. Run `npm run reference:check` to detect drift.
@@ -100,6 +100,7 @@ The reconciliation check also publishes the exact [typed SDK source snapshot](/r
 
 ## See also
 
+- [Leaderboards](/leaderboards/), [Feature flags](/flags/), [Game economy](/economy/)
 - Source repository: <https://github.com/bazokhan/bantam>
 - Docker image: [`bazokhan/bantam`](https://hub.docker.com/r/bazokhan/bantam) on Docker Hub
 - Marketing page: <https://gamercury.trugraph.io/projects/bantam>
