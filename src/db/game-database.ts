@@ -94,7 +94,9 @@ export class GameDatabase {
 
   getWallet(playerId: string): WalletBalance[] {
     return this.db
-      .prepare("SELECT currency_id currencyId, balance FROM wallets WHERE player_id=? ORDER BY currency_id")
+      .prepare(
+        "SELECT currency_id currencyId, balance FROM wallets WHERE player_id=? ORDER BY currency_id",
+      )
       .all(playerId) as WalletBalance[];
   }
 
@@ -123,7 +125,11 @@ export class GameDatabase {
     now: number,
   ): WalletMutationResult {
     if (!Number.isSafeInteger(amount) || amount <= 0)
-      throw new BantamError("invalid-amount", "Currency amount must be a positive safe integer", 400);
+      throw new BantamError(
+        "invalid-amount",
+        "Currency amount must be a positive safe integer",
+        400,
+      );
     return this.mutateCurrency(playerId, currencyId, amount, reason, idempotencyKey, now);
   }
 
@@ -161,7 +167,11 @@ export class GameDatabase {
         400,
       );
     if (!Number.isSafeInteger(delta) || delta === 0)
-      throw new BantamError("invalid-amount", "Currency amount must be a non-zero safe integer", 400);
+      throw new BantamError(
+        "invalid-amount",
+        "Currency amount must be a non-zero safe integer",
+        400,
+      );
     if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(reason))
       throw new BantamError("invalid-reason", "Transaction reason has an invalid format", 400);
     if (
@@ -176,7 +186,11 @@ export class GameDatabase {
         400,
       );
     if (!Number.isSafeInteger(now) || now < 0)
-      throw new BantamError("invalid-timestamp", "Timestamp must be a non-negative safe integer", 400);
+      throw new BantamError(
+        "invalid-timestamp",
+        "Timestamp must be a non-negative safe integer",
+        400,
+      );
 
     return this.db
       .transaction((): WalletMutationResult => {
