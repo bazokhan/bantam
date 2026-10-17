@@ -15,6 +15,7 @@ import {
 } from "../auth/admin.js";
 import type { AdminDatabase } from "../db/admin-database.js";
 import { BantamError } from "../errors.js";
+import { catalogItem, googlePlayServiceAccountEnv } from "../services/economy.js";
 import type { AdapterSpec, BoardDefinition, RuntimeGame } from "../types.js";
 import {
   clearCookieValue,
@@ -50,9 +51,16 @@ export type ReloadRuntimes = (manifest: ManifestFile) => Promise<{ added: string
 // Required env keys per game. Booleans only — never echo the value back to
 // the operator, even in error messages. The full key names are documented in
 // the SKILL so this list stays authoritative.
-function requiredEnvKeys(prefix: string, authProvider: RuntimeGame["authProvider"]): string[] {
-  const base = [`${prefix}_IDENTITY_SALT`, `${prefix}_SESSION_SECRET`, `${prefix}_CURSOR_SECRET`];
-  if (authProvider === "pgs-v2") base.push(`${prefix}_PGS_CLIENT_ID`, `${prefix}_PGS_CLIENT_SECRET`);
+function requiredEnvKeys(game: RuntimeGame): string[] {
+  const base = [
+    `${game.secretPrefix}_IDENTITY_SALT`,
+    `${game.secretPrefix}_SESSION_SECRET`,
+    `${game.secretPrefix}_CURSOR_SECRET`,
+  ];
+  if (game.authProvider === "pgs-v2")
+    base.push(`${game.secretPrefix}_PGS_CLIENT_ID`, `${game.secretPrefix}_PGS_CLIENT_SECRET`);
+  if (game.economy?.iapProducts?.some((product) => product.provider === "google_play"))
+    base.push(googlePlayServiceAccountEnv(game.secretPrefix));
   return base;
 }
 
@@ -434,7 +442,7 @@ export async function registerAdmin(
   app.get<{ Params: { gameId: string } }>("/admin/games/:gameId", async (request, reply) => {
     const runtime = runtimes.get(request.params.gameId);
     if (!runtime) return reply.code(404).type("text/plain").send("game not found");
-    const envKeys = requiredEnvKeys(runtime.game.secretPrefix, runtime.game.authProvider);
+    const envKeys = requiredEnvKeys(runtime.game);
     const presence = envPresence(envKeys);
     const lastRun = runtime.db.recentRuns(1)[0];
     const allBoards: { adapter: { id: string; version: string }; board: BoardDefinition }[] = [];
@@ -459,6 +467,7 @@ export async function registerAdmin(
     }));
     const ready = runtime.db.ready();
     const actions = `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/players">Players</a>
+      <a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/flags">Flags</a>
       <a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/runs">Recent runs</a>
       <a class="btn secondary" href="/admin/manifest">Edit manifest</a>`;
     const body = `${pageHead(
@@ -598,7 +607,7 @@ export async function registerAdmin(
     const players = runtime.db.listPlayers(200);
     const rows = players.map((player) => [
       {
-        html: `<code title="${escapeHtml(player.id)}">${escapeHtml(truncateId(player.id))}</code>`,
+        html: `<a href="/admin/games/${escapeHtml(runtime.game.id)}/players/${encodeURIComponent(player.id)}"><code title="${escapeHtml(player.id)}">${escapeHtml(truncateId(player.id))}</code></a>`,
         label: "id",
       },
       { html: badge(player.provider), label: "provider" },
@@ -614,7 +623,7 @@ export async function registerAdmin(
     ]);
     const body = `${pageHead(
       `Players · ${runtime.game.displayName}`,
-      `Most recent ${players.length} of this game. Delete removes the player row, refresh sessions, leaderboard entries, and runs. Audit log captures the operator and truncated id.`,
+      `Most recent ${players.length} of this game. Delete removes the player row, refresh sessions, leaderboard entries, runs, and economy data. Audit log captures the operator and truncated id.`,
       `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
     )}
     ${players.length ? renderTable(["id", "provider", "display name", "created (UTC)", "actions"], rows) : banner("No players have signed into this game yet.", "warn", "Empty")}`;
@@ -646,6 +655,167 @@ export async function registerAdmin(
       return reply.redirect(`/admin/games/${encodeURIComponent(runtime.game.id)}/players`, 302);
     },
   );
+
+  app.get<{ Params: { gameId: string; playerId: string } }>(
+    "/admin/games/:gameId/players/:playerId",
+    async (request, reply) => {
+      const runtime = runtimes.get(request.params.gameId);
+      if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+      const player = runtime.db.getPlayer(request.params.playerId);
+      if (!player) return reply.code(404).type("text/plain").send("player not found");
+      const saveError = new URL(request.url, "http://admin.local").searchParams.get("error");
+      const wallet = runtime.db.getWallet(player.id);
+      const ledger = runtime.db.listWalletTransactions(player.id, 50);
+      const inventory = runtime.db.getInventory(player.id);
+      const purchases = runtime.db.listStorePurchases(player.id, 50);
+      const iaps = runtime.db.listIapPurchases(player.id, 50);
+      const walletRows = wallet.map((row) => [
+        { html: `<code>${escapeHtml(row.currencyId)}</code>`, label: "currency" },
+        { html: String(row.balance), label: "balance", numeric: true },
+      ]);
+      const ledgerRows = ledger.map((row) => [
+        { html: escapeHtml(new Date(row.createdAt).toISOString()), label: "when" },
+        { html: `<code>${escapeHtml(row.currencyId)}</code>`, label: "currency" },
+        { html: String(row.amount), label: "amount", numeric: true },
+        { html: String(row.balanceAfter), label: "after", numeric: true },
+        { html: `<code>${escapeHtml(row.reason)}</code>`, label: "reason" },
+      ]);
+      const inventoryRows = inventory.map((row) => [
+        { html: `<code>${escapeHtml(row.itemId)}</code>`, label: "item" },
+        { html: String(row.quantity), label: "qty", numeric: true },
+      ]);
+      const purchaseRows = purchases.map((row) => [
+        { html: `<code>${escapeHtml(row.offerId)}</code>`, label: "offer" },
+        { html: `<code>${escapeHtml(row.itemId)}</code>`, label: "item" },
+        { html: `${row.priceAmount} ${escapeHtml(row.currencyId)}`, label: "price" },
+        { html: escapeHtml(new Date(row.createdAt).toISOString()), label: "when" },
+      ]);
+      const iapRows = iaps.map((row) => [
+        { html: `<code>${escapeHtml(row.productId)}</code>`, label: "product" },
+        { html: badge(row.verificationState), label: "verified" },
+        { html: badge(row.fulfillmentState), label: "fulfilled" },
+        { html: badge(row.acknowledgeState), label: "ack" },
+        { html: escapeHtml(new Date(row.createdAt).toISOString()), label: "when" },
+      ]);
+      const action = `/admin/games/${escapeHtml(runtime.game.id)}/players/${encodeURIComponent(player.id)}`;
+      const body = `${pageHead(
+        player.displayName,
+        `Economy inspection for ${escapeHtml(truncateId(player.id))}. Manual changes write the same ledger as player operations. Purchase tokens are never shown.`,
+        `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/players">All players</a>`,
+      )}
+      ${saveError ? banner(escapeHtml(saveError), "bad", "Could not apply") : ""}
+      <section class="card">
+        <h3>Wallet</h3>
+        ${walletRows.length ? renderTable(["currency", "balance"], walletRows) : banner("No balances yet.", "warn")}
+      </section>
+      <section class="card">
+        <h3>Ledger</h3>
+        ${ledgerRows.length ? renderTable(["when", "currency", "amount", "after", "reason"], ledgerRows) : banner("No wallet transactions.", "warn")}
+      </section>
+      <section class="card">
+        <h3>Inventory</h3>
+        ${inventoryRows.length ? renderTable(["item", "qty"], inventoryRows) : banner("Inventory is empty.", "warn")}
+      </section>
+      <section class="card">
+        <h3>Store purchases</h3>
+        ${purchaseRows.length ? renderTable(["offer", "item", "price", "when"], purchaseRows) : banner("No store purchases.", "warn")}
+      </section>
+      <section class="card">
+        <h3>IAP</h3>
+        ${iapRows.length ? renderTable(["product", "verified", "fulfilled", "ack", "when"], iapRows) : banner("No IAP records.", "warn")}
+      </section>
+      <section class="card">
+        <h3>Adjust currency</h3>
+        <form class="form" method="post" action="${action}/currency">
+          ${field("Currency id", '<input type="text" name="currencyId" required maxlength="48" pattern="[a-z][a-z0-9_-]*">', "", true)}
+          ${field("Amount", '<input type="number" name="amount" required min="1" step="1">', "Positive integer. Debit uses the same field.", true)}
+          ${field("Direction", '<select name="direction"><option value="credit">Credit</option><option value="debit">Debit</option></select>')}
+          ${field("Idempotency key", `<input type="text" name="requestId" required maxlength="128" value="admin-${randomUUID()}">`, "", true)}
+          <div class="form-actions"><button type="submit" class="btn primary">Apply currency</button></div>
+        </form>
+      </section>
+      <section class="card">
+        <h3>Adjust inventory</h3>
+        <form class="form" method="post" action="${action}/item">
+          ${field("Item id", '<input type="text" name="itemId" required maxlength="48" pattern="[a-z][a-z0-9_-]*">', "Must exist in the game catalog.", true)}
+          ${field("Quantity", '<input type="number" name="quantity" required min="1" step="1" value="1">', "", true)}
+          ${field("Direction", '<select name="direction"><option value="grant">Grant</option><option value="remove">Remove</option></select>')}
+          ${field("Idempotency key", `<input type="text" name="requestId" required maxlength="128" value="admin-${randomUUID()}">`, "", true)}
+          <div class="form-actions"><button type="submit" class="btn primary">Apply item</button></div>
+        </form>
+      </section>`;
+      return reply.type("text/html").send(shell(player.displayName, body, nav("/admin/games")));
+    },
+  );
+
+  const playerEconomyRedirect = (gameId: string, playerId: string, error?: string) =>
+    `/admin/games/${encodeURIComponent(gameId)}/players/${encodeURIComponent(playerId)}${error ? `?error=${encodeURIComponent(error)}` : ""}`;
+
+  app.post<{
+    Params: { gameId: string; playerId: string };
+    Body: { currencyId?: string; amount?: string; direction?: string; requestId?: string };
+  }>("/admin/games/:gameId/players/:playerId/currency", async (request, reply) => {
+    const runtime = runtimes.get(request.params.gameId);
+    if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+    const playerId = request.params.playerId;
+    if (!runtime.db.getPlayer(playerId)) return reply.code(404).type("text/plain").send("player not found");
+    try {
+      const currencyId = typeof request.body?.currencyId === "string" ? request.body.currencyId : "";
+      const amount = Number(request.body?.amount);
+      const requestId = typeof request.body?.requestId === "string" ? request.body.requestId : "";
+      const direction = request.body?.direction === "debit" ? "debit" : "credit";
+      if (direction === "debit")
+        runtime.db.debitCurrency(playerId, currencyId, amount, "admin_adjustment", requestId, Date.now());
+      else runtime.db.creditCurrency(playerId, currencyId, amount, "admin_adjustment", requestId, Date.now());
+      request.log.info(
+        {
+          admin: (request as unknown as { adminId?: string }).adminId ?? "?",
+          game: runtime.game.id,
+          playerIdPrefix: truncateId(playerId),
+          action: `currency-${direction}`,
+          ts: Date.now(),
+        },
+        "admin adjusted currency",
+      );
+      return reply.redirect(playerEconomyRedirect(runtime.game.id, playerId), 302);
+    } catch (error) {
+      const message = error instanceof BantamError ? error.message : "Currency adjustment failed";
+      return reply.redirect(playerEconomyRedirect(runtime.game.id, playerId, message), 302);
+    }
+  });
+
+  app.post<{
+    Params: { gameId: string; playerId: string };
+    Body: { itemId?: string; quantity?: string; direction?: string; requestId?: string };
+  }>("/admin/games/:gameId/players/:playerId/item", async (request, reply) => {
+    const runtime = runtimes.get(request.params.gameId);
+    if (!runtime) return reply.code(404).type("text/plain").send("game not found");
+    const playerId = request.params.playerId;
+    if (!runtime.db.getPlayer(playerId)) return reply.code(404).type("text/plain").send("player not found");
+    try {
+      const itemId = typeof request.body?.itemId === "string" ? request.body.itemId : "";
+      const quantity = Number(request.body?.quantity);
+      const requestId = typeof request.body?.requestId === "string" ? request.body.requestId : "";
+      const item = catalogItem(runtime.game.economy, itemId);
+      if (request.body?.direction === "remove")
+        runtime.db.consumeItem(playerId, item, quantity, "admin_adjustment", requestId, Date.now());
+      else runtime.db.grantItem(playerId, item, quantity, "admin_adjustment", requestId, Date.now());
+      request.log.info(
+        {
+          admin: (request as unknown as { adminId?: string }).adminId ?? "?",
+          game: runtime.game.id,
+          playerIdPrefix: truncateId(playerId),
+          action: request.body?.direction === "remove" ? "item-remove" : "item-grant",
+          ts: Date.now(),
+        },
+        "admin adjusted inventory",
+      );
+      return reply.redirect(playerEconomyRedirect(runtime.game.id, playerId), 302);
+    } catch (error) {
+      const message = error instanceof BantamError ? error.message : "Inventory adjustment failed";
+      return reply.redirect(playerEconomyRedirect(runtime.game.id, playerId, message), 302);
+    }
+  });
 
   // ─── Adapters ────────────────────────────────────────────────────────────────
 
@@ -692,7 +862,7 @@ export async function registerAdmin(
         const ready = runtime.db.ready();
         const total = runtime.game.adapters.length;
         const loaded = runtime.adapters.size;
-        const envKeys = requiredEnvKeys(runtime.game.secretPrefix, runtime.game.authProvider);
+        const envKeys = requiredEnvKeys(runtime.game);
         const presence = envPresence(envKeys);
         const allEnv = envKeys.every((key) => presence[key]);
         return [

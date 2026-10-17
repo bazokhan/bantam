@@ -118,6 +118,7 @@ export default defineConfig({
             { label: "Operations", slug: "operations" },
             { label: "Scaling and migration", slug: "scaling" },
             { label: "Admin dashboard", slug: "admin-dashboard" },
+            { label: "Game economy", slug: "economy" },
           ],
         },
         {
