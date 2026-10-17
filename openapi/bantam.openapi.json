@@ -3,7 +3,7 @@
   "info": {
     "title": "Bantam Game Services",
     "description": "Small footprint. Authoritative results.",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "components": {
     "schemas": {}
@@ -431,6 +431,407 @@
         }
       }
     },
+    "/v1/games/{gameId}/economy/wallet": {
+      "get": {
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "balances": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "currencyId": {
+                            "type": "string"
+                          },
+                          "balance": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "currencyId",
+                          "balance"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "balances"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/economy/inventory": {
+      "get": {
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "itemId": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "itemId",
+                          "quantity"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/economy/store": {
+      "get": {
+        "tags": [
+          "economy"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "offers": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "itemId": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "integer"
+                          },
+                          "priceCurrencyId": {
+                            "type": "string"
+                          },
+                          "priceAmount": {
+                            "type": "integer"
+                          },
+                          "remainingPurchases": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "itemId",
+                          "quantity",
+                          "priceCurrencyId",
+                          "priceAmount",
+                          "remainingPurchases"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "offers"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/economy/purchases": {
+      "post": {
+        "tags": [
+          "economy"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "offerId": {
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "offerId",
+                  "requestId"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/economy/items/use": {
+      "post": {
+        "tags": [
+          "economy"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "itemId": {
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "itemId",
+                  "requestId"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/economy/rewards/claim": {
+      "post": {
+        "tags": [
+          "economy"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "rewardId": {
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rewardId",
+                  "requestId"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/games/{gameId}/economy/iap": {
+      "post": {
+        "tags": [
+          "economy"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "purchaseToken": {
+                    "minLength": 8,
+                    "maxLength": 4096,
+                    "type": "string"
+                  },
+                  "productId": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "google_play"
+                    ]
+                  }
+                },
+                "required": [
+                  "purchaseToken",
+                  "productId"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 2,
+              "maxLength": 48,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "gameId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/v1/games/{gameId}/flags": {
       "get": {
         "tags": [
@@ -514,6 +915,9 @@
     },
     {
       "name": "flags"
+    },
+    {
+      "name": "economy"
     }
   ]
 }

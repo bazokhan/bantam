@@ -1,6 +1,6 @@
 ---
 title: Admin dashboard
-description: Session-cookie admin UI for inspecting games, adapters, runs, and editing the manifest.
+description: Session-cookie admin UI for the manifest, feature flags, boards, runs, and player economy.
 ---
 
 The framework includes a session-cookie admin UI on the same port as the API. It is reachable at `/admin/`.
@@ -80,26 +80,29 @@ Every write is gated by the admin session cookie, and each change is logged with
 
 ## Routes
 
-| Method | Path                               | Purpose                                                                                                                     |
-| ------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/admin/`                          | Overview: counts (games, players, runs today) and a one-line per-game summary.                                              |
-| GET    | `/admin/login`                     | Login form (or auto-redirects to `/admin/` if already authenticated).                                                       |
-| POST   | `/admin/login`                     | Submit credentials, issue session cookie.                                                                                   |
-| GET    | `/admin/register`                  | First-admin registration form. 404 once any admin exists.                                                                   |
-| POST   | `/admin/register`                  | Create inaugural admin. 404 once any admin exists.                                                                          |
-| POST   | `/admin/logout`                    | Revoke session, clear cookie, redirect to login.                                                                            |
-| GET    | `/admin/games`                     | Per-game table (id, display name, auth badge, adapter count, player count, db readiness).                                   |
-| GET    | `/admin/games/:id`                 | Auth/grace/secretPrefix, **required env keys** (present/missing only, never values), boards (every adapter), last run time. |
-| GET    | `/admin/games/:id/boards`          | Boards list across every loaded adapter.                                                                                    |
-| GET    | `/admin/games/:id/boards/:boardId` | Top 50 for that board (period = `all_time` or today UTC).                                                                   |
-| GET    | `/admin/games/:id/runs`            | Last 20 runs (runId, adapterId, createdAt, payloadHash only).                                                               |
-| GET    | `/admin/games/:id/flags`           | Feature flags list + create form.                                                                                           |
-| GET    | `/admin/games/:id/players`         | Player table (truncated id, provider, created) + a confirm-POST delete form.                                                |
-| POST   | `/admin/games/:id/players/delete`  | Delete a single player; reuses the same `deletePlayer` path the public API exposes.                                         |
-| GET    | `/admin/adapters`                  | Loaded adapters + which games reference them.                                                                               |
-| GET    | `/admin/health`                    | Per-game db readiness, adapter coverage, env completeness, **read-only CORS origin list**.                                  |
-| GET    | `/admin/manifest`                  | Manifest editor (form + Advanced JSON).                                                                                     |
-| POST   | `/admin/manifest`                  | Save + reload runtimes; rolls back on reload failure.                                                                       |
+| Method | Path                                          | Purpose                                                                                                                     |
+| ------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/`                                     | Overview: counts (games, players, runs today) and a one-line per-game summary.                                              |
+| GET    | `/admin/login`                                | Login form (or auto-redirects to `/admin/` if already authenticated).                                                       |
+| POST   | `/admin/login`                                | Submit credentials, issue session cookie.                                                                                   |
+| GET    | `/admin/register`                             | First-admin registration form. 404 once any admin exists.                                                                   |
+| POST   | `/admin/register`                             | Create inaugural admin. 404 once any admin exists.                                                                          |
+| POST   | `/admin/logout`                               | Revoke session, clear cookie, redirect to login.                                                                            |
+| GET    | `/admin/games`                                | Per-game table (id, display name, auth badge, adapter count, player count, db readiness).                                   |
+| GET    | `/admin/games/:id`                            | Auth/grace/secretPrefix, **required env keys** (present/missing only, never values), boards (every adapter), last run time. |
+| GET    | `/admin/games/:id/boards`                     | Boards list across every loaded adapter.                                                                                    |
+| GET    | `/admin/games/:id/boards/:boardId`            | Top 50 for that board (period = `all_time` or today UTC).                                                                   |
+| GET    | `/admin/games/:id/runs`                       | Last 20 runs (runId, adapterId, createdAt, payloadHash only).                                                               |
+| GET    | `/admin/games/:id/flags`                      | Feature flags list + create form.                                                                                           |
+| GET    | `/admin/games/:id/players`                    | Player table (truncated id, provider, created) + a confirm-POST delete form.                                                |
+| GET    | `/admin/games/:id/players/:playerId`          | Wallet, ledger, inventory, store purchases, IAP state (no tokens), and adjustment forms.                                    |
+| POST   | `/admin/games/:id/players/:playerId/currency` | Audited credit/debit (`admin_adjustment`).                                                                                  |
+| POST   | `/admin/games/:id/players/:playerId/item`     | Audited grant/remove of a catalog item.                                                                                     |
+| POST   | `/admin/games/:id/players/delete`             | Delete a single player; reuses the same `deletePlayer` path the public API exposes.                                         |
+| GET    | `/admin/adapters`                             | Loaded adapters + which games reference them.                                                                               |
+| GET    | `/admin/health`                               | Per-game db readiness, adapter coverage, env completeness, **read-only CORS origin list**.                                  |
+| GET    | `/admin/manifest`                             | Manifest editor (form + Advanced JSON).                                                                                     |
+| POST   | `/admin/manifest`                             | Save + reload runtimes; rolls back on reload failure.                                                                       |
 
 ## Trust
 

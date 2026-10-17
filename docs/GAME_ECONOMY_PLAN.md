@@ -1,7 +1,7 @@
 # Game Economy Extension Plan
 
-Status: Phased implementation plan. Phase 1 is implemented on this branch; phases 2–5 remain
-planned pending review and merge.
+Status: Phases 1–4 are implemented in this repository. Phase 5 (a game client
+wiring) belongs in the game repo and is documented as an integration contract.
 
 ## Goal
 
@@ -128,30 +128,35 @@ Do not expose ordinary client methods such as `setBalance` or unrestricted `gran
 ## Suggested implementation phases
 
 ### Phase 1 — Economy foundation (implemented on this branch)
+
 - Define currency IDs and validation rules.
 - Add migrations for wallets and ledger.
 - Implement atomic credit/debit operations and idempotency.
 - Add unit and integration tests for insufficient balance, duplicate requests, concurrent spending, rollback, and ledger consistency.
 
-### Phase 2 — Inventory and virtual shop
-- Add item definitions, offers, and inventory persistence.
-- Implement store listing and server-priced item purchases.
-- Support stackable and permanent items.
-- Test purchase retries, ownership constraints, inactive offers, and concurrent requests.
+### Phase 2 — Inventory and virtual shop (implemented)
 
-### Phase 3 — Google Play IAP
-- Add provider product mapping and purchase records.
-- Implement server-side token verification and one-time fulfillment.
-- Handle acknowledgment/consumption retries, duplicate tokens, invalid tokens, and refund/revocation policy.
-- Keep credentials and provider API calls on the server.
+- Catalog-defined items and offers in the game manifest.
+- Inventory, inventory ledger, and store purchase persistence (`005_economy_shop.sql`).
+- Store listing and server-priced item purchases, including stackable and permanent items.
+- Tests for purchase retries, ownership constraints, inactive offers, limits, rollback, and concurrent requests.
 
-### Phase 4 — SDK, docs, and administration
-- Add typed SDK methods and API documentation.
-- Add audited admin adjustments and purchase/ledger inspection.
-- Document threat model, idempotency semantics, and operational recovery.
+### Phase 3 — Google Play IAP (implemented)
 
-### Phase 5 — a game integration
-- Configure coin-pack products and offers.
+- Provider product mapping in the catalog and `iap_purchases` records.
+- Server-side token verification behind an `IapVerifier` adapter (Google Play Android Publisher API).
+- One-time fulfillment, acknowledgment retry on resubmit, duplicate tokens, invalid tokens, and refund/revocation (record, do not auto-clawback).
+- Credentials stay in `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`. Provider HTTP runs outside the SQLite transaction.
+
+### Phase 4 — SDK, docs, and administration (implemented)
+
+- Typed SDK methods: `getWallet`, `getInventory`, `getStore`, `purchaseItem`, `useItem`, `claimReward`, `submitIapPurchase`.
+- Admin player economy page with audited currency and inventory adjustments.
+- Docs cover threat model, idempotency, and operational recovery.
+
+### Phase 5 — a game integration (game repo)
+
+- Configure coin-pack products and offers in that title's `games.json`.
 - Display wallet, inventory, and store state from Bantam.
 - Route virtual purchases through the server.
 - Integrate Google Play Billing and submit tokens to Bantam.
@@ -174,10 +179,10 @@ Do not expose ordinary client methods such as `setBalance` or unrestricted `gran
 - IAP rewards are granted only after server-side provider verification.
 - Existing Bantam functionality continues to work without regression.
 
-## Open design decisions
+## Design decisions (resolved for v1)
 
-- Confirm the existing player identity key and database migration conventions before implementation.
-- Decide whether item/offer definitions are configuration-only or persisted in tables for the first version.
-- Specify retention and privacy rules for provider purchase metadata.
-- Define game-specific refund policy for already-spent consumable currency; never assume a refund can safely be represented as a simple negative balance.
-- Confirm the exact Google Play API and acknowledgment/consumption flow against the current integration and provider requirements before implementation.
+- Player identity remains the existing per-game HMAC pseudonym. Economy tables reference `players(id)` and cascade on delete.
+- Item, offer, reward, and IAP product definitions are configuration-only in the game manifest. Inventory, ledgers, store purchases, and IAP records persist in SQLite.
+- IAP purchase tokens are stored only as SHA-256 hashes. They are never logged or shown in admin HTML. Clients resubmit the token to retry acknowledgment.
+- Refunds of already-fulfilled consumables are recorded and not automatically reversed. Game-specific clawback stays out of scope.
+- Google Play verification uses Android Publisher `purchases.products.get` plus `acknowledge`, authenticated with a service-account JWT (`jose`, no extra Google client library).

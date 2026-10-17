@@ -11,7 +11,7 @@ Alert on repeated 5xx responses, readiness failures, disk pressure, container re
 
 ## Admin dashboard
 
-The admin dashboard at `/admin/` lists games, adapters, and per-game health. It is read-only for inspections, plus a Manifest editor that validates and hot-reloads the manifest. The dashboard is gated by a session cookie issued on login; the first registration creates the only admin. See [Admin dashboard](/admin-dashboard/) and [First deploy](/first-deploy/).
+The admin dashboard at `/admin/` lists games, adapters, and per-game health. Operators edit the manifest (hot reload), write feature flags, inspect boards and runs, and apply audited economy adjustments on a player page. The dashboard is gated by a session cookie issued on login; the first registration creates the only admin. See [Admin dashboard](/admin-dashboard/) and [First deploy](/first-deploy/).
 
 ## Migrations
 
@@ -20,6 +20,8 @@ Migrations live in `migrations/`:
 - `001_initial.sql` — `players`, `refresh_sessions`, `runs`, `leaderboard_entries`, `rate_limits` (per-game DB)
 - `002_admins.sql` — `admins`, `admin_sessions` (server-global DB)
 - `003_feature_flags.sql` — `feature_flags` (per-game DB)
+- `004_economy.sql` — `wallets`, `wallet_transactions` (per-game DB)
+- `005_economy_shop.sql` — `inventory`, `inventory_transactions`, `store_purchases`, IAP fulfillment tables (per-game DB)
 
 Per-game DBs are at `/data/games/<id>/bantam.sqlite`. The admin DB is at `/data/admin.sqlite`. Litestream replication of `/data` covers both.
 
