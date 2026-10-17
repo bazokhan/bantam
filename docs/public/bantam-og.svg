@@ -75,10 +75,10 @@
   <g transform="translate(420, 200)">
     <text x="0" y="0" font-family="'Press Start 2P', 'VT323', monospace" font-size="86" fill="#00f0ff" letter-spacing="6" text-anchor="start">BANTAM</text>
     <rect x="0" y="40" width="200" height="6" fill="#ff2d95"/>
-    <text x="0" y="120" font-family="'JetBrains Mono', monospace" font-size="28" fill="#a8b3cf" font-weight="500">Plug a leaderboard into any game.</text>
-    <text x="0" y="160" font-family="'JetBrains Mono', monospace" font-size="28" fill="#a8b3cf" font-weight="500">Done.</text>
+    <text x="0" y="120" font-family="'JetBrains Mono', monospace" font-size="28" fill="#a8b3cf" font-weight="500">Leaderboards, flags, and economy.</text>
+    <text x="0" y="160" font-family="'JetBrains Mono', monospace" font-size="28" fill="#a8b3cf" font-weight="500">One container.</text>
     <text x="0" y="240" font-family="'JetBrains Mono', monospace" font-size="20" fill="#ffd60a">docker run bazokhan/bantam:latest</text>
-    <text x="0" y="290" font-family="'JetBrains Mono', monospace" font-size="18" fill="#7a8499">game-agnostic · server-validated · Litestream-backed</text>
+    <text x="0" y="290" font-family="'JetBrains Mono', monospace" font-size="18" fill="#7a8499">leaderboards · flags · economy · Litestream</text>
   </g>
 
   <!-- Footer chip -->

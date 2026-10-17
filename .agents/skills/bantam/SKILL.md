@@ -1,11 +1,11 @@
 ---
 name: bantam
-description: Wires a game to Bantam authoritative leaderboards — auth, evidence-only run submit, GameAdapterV1, games.json, BantamClient, PGS v2 vs development auth. Use when adding leaderboards, adapters, BantamClient, games.json, or Play Games v2 to a Bantam-backed game.
+description: Wires a game to Bantam — auth, evidence-only run submit, leaderboards, feature flags, optional economy (wallet, shop, Google Play IAP), GameAdapterV1, games.json, BantamClient, PGS v2 vs development auth. Use when adding leaderboards, flags, economy, adapters, BantamClient, games.json, or Play Games v2 to a Bantam-backed game.
 ---
 
 # Bantam
 
-Game-agnostic leaderboard backend. Clients submit **evidence**. A versioned server adapter **derives** board values inside the run transaction. No game-specific code ships in this repository.
+Game-agnostic backend for leaderboards, feature flags, and an optional server-owned economy. Clients submit **evidence**. A versioned server adapter **derives** board values inside the run transaction. Catalog prices and IAP grants are server-derived. No game-specific code ships in this repository.
 
 Read [reference.md](reference.md) for OpenAPI paths, manifest schema, `GameAdapterV1`, and SDK methods. Prefer live `GET {base}/openapi.json` over a remembered schema.
 
@@ -21,9 +21,9 @@ Probe, in order: `GET /healthz`, `GET /version`, `GET /openapi.json`. `/version.
 
 ## What Bantam is / is not
 
-**Is:** player auth and sessions; adapter-validated run submit; leaderboards (page, me, around-me); per-game feature flags (`GET /v1/games/{gameId}/flags`, operator-written in the admin UI); `DELETE` player; admin manifest hot-reload; Litestream backup.
+**Is:** player auth and sessions; adapter-validated run submit; leaderboards (page, me, around-me); per-game feature flags (`GET /v1/games/{gameId}/flags`, operator-written in the admin UI); optional server-authoritative economy (wallets, inventory, virtual shop, Google Play IAP verification); `DELETE` player; admin manifest hot-reload; Litestream backup.
 
-**Is not:** ads, IAP, analytics funnels, Crashlytics, or a first-class achievements API. Do not dump an analytics queue into a run payload.
+**Is not:** ads, analytics funnels, Crashlytics, a first-class achievements API, or a catalog CMS. Do not dump an analytics queue into a run payload. Clients never set balances or prices.
 
 ### Feature flags
 
@@ -40,7 +40,7 @@ The skill ships **zero** passwords, tokens, salts, PGS secrets, or session cooki
 
 - May name **paths and env var names only**.
 - Operator admin file (gitignored): `deploy/the deployment secret store`. If it exists, **read it; never echo values** into chat, commits, issues, plans, or examples.
-- Per-game env (all values min length 16): `${secretPrefix}_IDENTITY_SALT`, `${secretPrefix}_SESSION_SECRET`, `${secretPrefix}_CURSOR_SECRET`. For `pgs-v2` also `${secretPrefix}_PGS_CLIENT_ID` and `${secretPrefix}_PGS_CLIENT_SECRET`.
+- Per-game env (all values min length 16): `${secretPrefix}_IDENTITY_SALT`, `${secretPrefix}_SESSION_SECRET`, `${secretPrefix}_CURSOR_SECRET`. For `pgs-v2` also `${secretPrefix}_PGS_CLIENT_ID` and `${secretPrefix}_PGS_CLIENT_SECRET`. For Google Play IAP products, `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (service-account JSON; name only).
 - CORS: `BANTAM_ALLOWED_ORIGINS` (comma-separated).
 - Never log bodies, credentials, tokens, raw provider IDs, IP addresses, or unredacted headers (`AGENTS.md`).
 - Public local example `authorizationCode: "demo-player"` in the README is development-only, not a live admin credential.
@@ -53,7 +53,7 @@ The skill ships **zero** passwords, tokens, salts, PGS secrets, or session cooki
 3. `authProvider`: `development` for local/Internal experiments; `pgs-v2` for Play Games server auth codes. Spec both; flip the manifest when Play OAuth exists. Live/production must not use development auth.
 4. Prefer `kind: "file"` adapters in a **sibling game repo**, compiled to `.js`/`.mjs`, mounted at `/bantam/adapters`. `source` is the **basename**. Restart the container to load new files (not hot-reloaded). Generic boards (`kind: "generic"`, max 16) accept claimed integers only — stub/demo, not competitive games.
 5. Put the game on the live manifest via `/admin` (writable `/data/games.json`) or a mounted `games.json` (read-only editor). First admin: `/admin/register` once, then `/admin/login`. The current dashboard does not show file-adapter boards or players; do not treat an empty game page as a missing game. Plan: `ADMIN_DASHBOARD_PLAN.md`.
-6. Client: `npm install @gamercury/bantam-sdk` from the **public npm registry** (not `file:../bantam`). `BantamClient` with `baseUrl`, `gameId`, `KeyValueStorage`. `optionalLogin` → `queueBest` after a valid run → `leaderboard` / `myRank` / `aroundMe`. `deleteMyData` for erasure. Offline queue is local; 4xx except 401/429 drops the run; 401 refreshes then retries. Maintainers publish with GitHub Actions trusted publishing (workflow `publish-sdk.yml`, GitHub user + repo, no org, no `NPM_TOKEN`). Docs: `docs/src/content/docs/sdk.md`. Never publish `@gamercury/bantam` (server).
+6. Client: `npm install @gamercury/bantam-sdk` from the **public npm registry** (not `file:../bantam`). `BantamClient` with `baseUrl`, `gameId`, `KeyValueStorage`. `optionalLogin` → `queueBest` after a valid run → `leaderboard` / `myRank` / `aroundMe`. Economy (optional catalog on the game): `getWallet` / `getInventory` / `getStore` / `purchaseItem` / `useItem` / `claimReward` / `submitIapPurchase`. `deleteMyData` for erasure. Offline queue is local; 4xx except 401/429 drops the run; 401 refreshes then retries. Maintainers publish with GitHub Actions trusted publishing (workflow `publish-sdk.yml`, GitHub user + repo, no org, no `NPM_TOKEN`). Docs: `docs/src/content/docs/sdk.md` and `docs/src/content/docs/economy.md`. Never publish `@gamercury/bantam` (server).
 7. Gameplay stays playable with login cancelled or the API down.
 
 ## Adapter contract (short)

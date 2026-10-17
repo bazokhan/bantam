@@ -29,4 +29,4 @@ npm run ops -- backup-status
 
 For recovery, stop the writer first. `restore-if-missing` never overwrites a file. Explicit restore also refuses an existing database unless `--force` and an exact configured game ID are supplied.
 
-After restore, run the full integrity check, start Bantam, verify readiness, authenticate a test player, and compare expected leaderboard state. Record the chosen replica generation and recovery point.
+After restore, run the full integrity check, start Bantam, verify readiness, authenticate a test player, and compare expected leaderboard, flag, and economy state. Record the chosen replica generation and recovery point.

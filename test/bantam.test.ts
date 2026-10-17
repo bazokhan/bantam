@@ -188,6 +188,8 @@ describe("SQLite durability and leaderboard semantics", () => {
     const migrations = join(root, "migrations");
     cpSync(join(process.cwd(), "migrations"), migrations, { recursive: true });
     rmSync(join(migrations, "003_feature_flags.sql"));
+    rmSync(join(migrations, "004_economy.sql"));
+    rmSync(join(migrations, "005_economy_shop.sql"));
     const path = join(root, "game.sqlite");
     new GameDatabase(path, migrations).close();
     const before = new Database(path);

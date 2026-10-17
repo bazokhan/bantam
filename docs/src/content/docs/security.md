@@ -11,6 +11,7 @@ description: Identity, sessions, logging, input, and secret-handling guarantees.
 - Logs contain request ID, method, route path, status, and duration. They omit query strings, bodies, IP addresses, auth headers, cookies, tokens, and player identifiers.
 - Display names are NFKC-normalized, stripped of controls and bidirectional overrides, collapsed, and limited to 24 graphemes.
 - Submission and read limits persist per player. Authentication exchange limits use an in-memory process-secret fingerprint and never persist raw addresses.
-- Per-player deletion removes sessions, runs, board entries, and the player row atomically.
+- Per-player deletion removes sessions, runs, board entries, economy rows (wallets, inventory, purchases, IAP records), and the player row atomically.
+- Economy clients submit offer ids, request ids, or IAP tokens. Prices, balances, and grants are server-derived. IAP tokens are hashed for uniqueness, never logged, and never rendered in admin HTML. Provider verification runs outside the database transaction.
 
 Use independent secrets per title and purpose. Store them in Coolify or another deployment secret manager, never source control. If a signing secret leaks, rotate it and expect access-token invalidation. If an identity salt leaks, rotate only with an account migration plan because pseudonyms will change.

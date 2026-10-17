@@ -6,7 +6,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "Bantam",
-      description: "Plug a leaderboard into any game. Done.",
+      description: "Leaderboards, feature flags, and a server-owned economy in one container.",
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
       social: [
@@ -58,7 +58,10 @@ export default defineConfig({
         },
         {
           tag: "meta",
-          attrs: { property: "og:image:alt", content: "Bantam — leaderboards in one container" },
+          attrs: {
+            property: "og:image:alt",
+            content: "Bantam — leaderboards, flags, and economy in one container",
+          },
         },
         {
           tag: "meta",
@@ -66,7 +69,10 @@ export default defineConfig({
         },
         {
           tag: "meta",
-          attrs: { name: "twitter:image:alt", content: "Bantam — leaderboards in one container" },
+          attrs: {
+            name: "twitter:image:alt",
+            content: "Bantam — leaderboards, flags, and economy in one container",
+          },
         },
         {
           tag: "meta",
@@ -95,6 +101,15 @@ export default defineConfig({
           ],
         },
         {
+          label: "Features",
+          items: [
+            { label: "Leaderboards", slug: "leaderboards" },
+            { label: "Feature flags", slug: "flags" },
+            { label: "Game economy", slug: "economy" },
+            { label: "Admin dashboard", slug: "admin-dashboard" },
+          ],
+        },
+        {
           label: "Authoring",
           items: [
             { label: "Adapter contract", slug: "adapters" },
@@ -117,7 +132,6 @@ export default defineConfig({
             { label: "Security and privacy", slug: "security" },
             { label: "Operations", slug: "operations" },
             { label: "Scaling and migration", slug: "scaling" },
-            { label: "Admin dashboard", slug: "admin-dashboard" },
           ],
         },
         {
