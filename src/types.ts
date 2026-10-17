@@ -1,3 +1,5 @@
+import type { EconomyCatalog } from "./services/economy.js";
+
 export type BoardDirection = "higher" | "lower";
 export type BoardPeriod = "all_time" | "daily";
 
@@ -61,6 +63,7 @@ export type GameManifestEntry = {
   secretPrefix: string;
   gracePeriodHours: number;
   authProvider: "pgs-v2" | "development";
+  economy?: EconomyCatalog;
 };
 
 export type RuntimeGame = GameManifestEntry & {

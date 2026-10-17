@@ -1,9 +1,9 @@
 ---
-title: Bantam — Plug a leaderboard into any game. Done.
-description: Authoritative leaderboards for any game in one Docker container. Drop an adapter file, mount a folder, ship.
+title: Bantam — Authoritative game backend. One container.
+description: Leaderboards, feature flags, and a server-owned economy in one Docker container. Drop an adapter, mount a folder, ship.
 template: splash
 hero:
-  tagline: Authoritative leaderboards for any game. One container. One JSON file. Boom.
+  tagline: Leaderboards, flags, and economy. One container. One JSON file.
   actions:
     - text: Your first game in 4 commands
       link: /quickstart/
@@ -75,12 +75,41 @@ hero:
   <div style="flex:1;min-width:240px;">
     <p style="font-size:1.4rem;color:var(--neon-cyan);text-shadow:0 0 0.5rem rgba(0,240,255,0.5);margin:0;">
       <strong>Skip the server engineering.</strong>
-      Bantam is a single Docker container that owns identity, validation, ranks, and recovery — so your game sends evidence and reads leaderboards. No DB schema. No migration plan. No auth library. No replica math.
+      Bantam is a single Docker container that owns identity, ranks, feature flags, wallets, and recovery — so your game sends evidence and reads server-derived state. No DB schema. No migration plan. No auth library. No replica math.
     </p>
   </div>
 </div>
 
-## What you get
+## What ships in the container
+
+<div class="grid">
+  <div class="grid-card">
+    <h3>Authoritative leaderboards</h3>
+    <p>Players submit evidence. A versioned adapter derives the score inside the run transaction. Page, me, around-me, daily and all-time boards. See <a href="/leaderboards/">Leaderboards</a>.</p>
+  </div>
+  <div class="grid-card">
+    <h3>Feature flags</h3>
+    <p>Per-game flags written in the admin UI, resolved server-side. Full rollout or deterministic per-player buckets. Clients only read. See <a href="/flags/">Feature flags</a>.</p>
+  </div>
+  <div class="grid-card">
+    <h3>Game economy</h3>
+    <p>Optional catalog in <code>games.json</code>: wallets, inventory, virtual shop, claimable rewards, Google Play IAP verification. Clients never send a price. See <a href="/economy/">Game economy</a>.</p>
+  </div>
+  <div class="grid-card">
+    <h3>Player auth</h3>
+    <p>Play Games Services v2 or a development provider. Per-game HMAC pseudonyms, rotating sessions, refresh families. One config line. See <a href="/configuration/">Manifest and PGS v2</a>.</p>
+  </div>
+  <div class="grid-card">
+    <h3>Admin dashboard</h3>
+    <p>Session-cookie UI on the same port. Manifest hot-reload, flags, boards, runs, player economy adjustments. First registration creates the only admin. See <a href="/admin-dashboard/">Admin dashboard</a>.</p>
+  </div>
+  <div class="grid-card">
+    <h3>Self-host backups</h3>
+    <p>One non-root container, SQLite WAL, Litestream to S3-compatible storage. You own the data, the keys, and the restore. See <a href="/durability/">SQLite and backups</a>.</p>
+  </div>
+</div>
+
+## How it is built
 
 <div class="grid">
   <div class="grid-card">
@@ -89,15 +118,15 @@ hero:
   </div>
   <div class="grid-card">
     <h3>Game-agnostic by default</h3>
-    <p>The framework ships zero game-specific code. Drop a <code>.mjs</code> adapter file into a mounted folder, or skip code entirely and declare boards in JSON. Done.</p>
+    <p>The framework ships zero game-specific code. Drop a <code>.mjs</code> adapter file into a mounted folder, or skip code entirely and declare boards in JSON. Economy catalogs are optional JSON on the same game entry.</p>
   </div>
   <div class="grid-card">
     <h3>Server-side authority</h3>
-    <p>Players submit evidence. The server only writes what the adapter derives. Tampering, replays, and fabricated scores are caught at the door.</p>
+    <p>Players submit evidence — a run payload, a flag read, an offer id, or a store token. The server only writes what an adapter or catalog derives. Tampering, replays, and fabricated scores or prices are caught at the door.</p>
   </div>
   <div class="grid-card">
-    <h3>Self-host or close to it</h3>
-    <p>Docker image, persistent volume, S3-compatible bucket. You own the data. You own the keys. You own the backups.</p>
+    <h3>Typed client</h3>
+    <p>Games install <code>@gamercury/bantam-sdk</code>. Login, queued run submit, leaderboards, flags, wallet, shop, IAP, and player deletion. See <a href="/sdk/">SDK on npm</a>.</p>
   </div>
 </div>
 
@@ -105,7 +134,7 @@ hero:
 
 ## Your first game — 4 commands, no code required
 
-You're 60 seconds from a leaderboard. The "demo" game below is a real config that ships with the image. It accepts `{ "high_score": <number> }` and ranks players.
+You're 60 seconds from a leaderboard. The "demo" game below is a real config that ships with the image. It accepts `{ "high_score": <number> }` and ranks players. Flags and economy attach to the same game after this.
 
 ### 1. Run the container
 
@@ -160,6 +189,15 @@ curl http://localhost:3000/v1/games/my-game/leaderboards/high_score \
 ```
 
 **Done.** You have a real, authoritative, server-validated leaderboard for a real game. Zero database tables touched by hand.
+
+### Then add the rest
+
+Same container, same game id:
+
+- **Flags** — create them at `/admin/games/my-game/flags`. Clients call `GET /v1/games/my-game/flags` or `bantam.getFlags()`. [Feature flags](/flags/).
+- **Economy** — add an `economy` catalog to the same `games.json` entry. Clients call `getWallet` / `getStore` / `purchaseItem`. [Game economy](/economy/).
+- **Play auth** — switch `authProvider` to `pgs-v2` and set the PGS env keys. [Manifest and PGS v2](/configuration/).
+- **Admin** — register once at `/admin/register`, then edit the manifest in place. [Admin dashboard](/admin-dashboard/).
 
 </div>
 
@@ -282,7 +320,7 @@ curl http://localhost:3000/v1/games/my-game/leaderboards/high_score \
 
 ## Why "Bantam"?
 
-Bantam is a small, scrappy chicken. Bantam is also a small, scrappy game backend. The container is small, the dependencies are small, the integration footprint is small. It does the things leaderboards need and skips the rest.
+Bantam is a small, scrappy chicken. Bantam is also a small, scrappy game backend. The container is small, the dependencies are small, the integration footprint is small. It does the things a game needs — ranks, flags, wallets, recovery — and skips the rest.
 
 <div class="agentic">
 
@@ -300,8 +338,9 @@ Bantam is structured so an agent can wire a game end-to-end without reading pros
 **Action shapes** (one JSON file per surface):
 
 - `games.json` schema: TypeBox-validated, see [Manifest and PGS v2](/configuration/)
+- Optional `economy` catalog on a game entry: currencies, items, offers, rewards, IAP products — see [Game economy](/economy/)
 - `RunBody.payload`: `Record<string, unknown>`, opaque by design — adapters define their own payload contract
-- Per-game env vars: `${secretPrefix}_IDENTITY_SALT|SESSION_SECRET|CURSOR_SECRET`, plus optional `PGS_CLIENT_ID|SECRET`
+- Per-game env vars: `${secretPrefix}_IDENTITY_SALT|SESSION_SECRET|CURSOR_SECRET`, plus optional `PGS_CLIENT_ID|SECRET` and `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`
 
 **Capabilities** (what Bantam does and does NOT do):
 
@@ -310,15 +349,16 @@ Bantam is structured so an agent can wire a game end-to-end without reading pros
 - ✓ persists leaderboard entries per `(board_id, period_key, player_id)`
 - ✓ serves paginated leaderboards, player's rank, around-me
 - ✓ serves per-game feature flags resolved server-side, with deterministic per-player rollout
+- ✓ optional economy: integer wallets, inventory, catalog-priced shop, claimable rewards, Google Play IAP fulfillment
 - ✓ continuous backup to S3-compatible storage
 - ✗ does not validate the player's gameplay events (your adapter does)
 - ✗ does not require any external service, identity provider, or database engine
-- ✓ ships a session-cookie admin dashboard: first registration creates the admin, dashboard edits the manifest in-place with hot reload
+- ✓ ships a session-cookie admin dashboard: first registration creates the admin, dashboard edits the manifest in-place with hot reload, and operators write flags and audited economy adjustments
 
 **Sandbox expectations**:
 
 - The framework writes only to `/data/games/<gameId>/bantam.sqlite`.
 - The framework reads only from `/etc/bantam/games.json` and `/bantam/adapters/`.
-- No outbound network calls except Litestream replication and the configured auth provider.
+- Outbound network calls are Litestream replication, the configured auth provider, and — only when a game catalog lists Google Play IAP products — the Android Publisher API.
 
 </div>

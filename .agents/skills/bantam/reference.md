@@ -1,6 +1,6 @@
 # Bantam reference
 
-Fetch `GET {base}/openapi.json` before relying on this file. Docs site: https://bantam.trugraph.io (slugs: adapters, generic-boards, adapter-authoring, configuration, admin-dashboard, reference, security).
+Fetch `GET {base}/openapi.json` before relying on this file. Docs site: https://bantam.trugraph.io (slugs: index, leaderboards, flags, economy, adapters, generic-boards, adapter-authoring, configuration, admin-dashboard, sdk, reference, security).
 
 ## Public HTTP
 
@@ -21,6 +21,13 @@ Prefix: `/v1/games/{gameId}` unless noted. `gameId` 2–48 chars.
 | GET    | `/v1/games/{gameId}/leaderboards/{boardId}/around-me` | Query `period`, `radius` (1–10). Bearer required.                                                              |
 | DELETE | `/v1/games/{gameId}/player`                           | Erasure. Bearer required.                                                                                      |
 | GET    | `/v1/games/{gameId}/flags`                            | `{ flags: [{ key, enabled, value }] }`. Bearer optional (needed for partial rollouts). Read-only.              |
+| GET    | `/v1/games/{gameId}/economy/wallet`                   | `{ balances: [{ currencyId, balance }] }`. Bearer required.                                                    |
+| GET    | `/v1/games/{gameId}/economy/inventory`                | `{ items: [{ itemId, quantity }] }`. Bearer required.                                                          |
+| GET    | `/v1/games/{gameId}/economy/store`                    | Active offers and server prices. Bearer required.                                                              |
+| POST   | `/v1/games/{gameId}/economy/purchases`                | `{ offerId, requestId }`. Bearer required.                                                                     |
+| POST   | `/v1/games/{gameId}/economy/items/use`                | `{ itemId, requestId }`. Bearer required.                                                                      |
+| POST   | `/v1/games/{gameId}/economy/rewards/claim`            | `{ rewardId, requestId }`. Catalog allowlist + claim cap. Bearer required.                                     |
+| POST   | `/v1/games/{gameId}/economy/iap`                      | `{ purchaseToken, productId, provider? }`. Server verifies with Google Play. Bearer required.                  |
 
 No achievements routes. Admin UI under `/admin/*` (cookie session). Admin run list omits payload bodies.
 
@@ -44,7 +51,20 @@ Feature flags: operators write at `/admin/games/{gameId}/flags`; clients only re
       ],
       "secretPrefix": "BANTAM_GAME_MY_GAME",
       "gracePeriodHours": 24,
-      "authProvider": "development"
+      "authProvider": "development",
+      "economy": {
+        "currencies": [{ "id": "coins" }],
+        "items": [{ "id": "extra_life", "type": "consumable", "stackable": true, "usable": true }],
+        "offers": [
+          {
+            "id": "life_pack",
+            "itemId": "extra_life",
+            "quantity": 1,
+            "priceCurrencyId": "coins",
+            "priceAmount": 50
+          }
+        ]
+      }
     }
   ]
 }
@@ -94,24 +114,32 @@ Public npm: `npm install @gamercury/bantam-sdk`. Source: `packages/sdk`. Do not 
 | `deleteMyData()`                                     | DELETE `/player`; clears session and queue keys.                                         |
 | `getFlags()`                                         | `{ flags }` via GET `/flags`; sends the session when present.                            |
 | `isEnabled(key, fallback?)`                          | Boolean gate; `fallback` (default `false`) when the flag is absent or the read fails.    |
+| `getWallet()`                                        | `{ balances }`                                                                           |
+| `getInventory()`                                     | `{ items }`                                                                              |
+| `getStore()`                                         | `{ offers }` with authoritative prices                                                   |
+| `purchaseItem(offerId, requestId)`                   | Virtual-currency purchase                                                                |
+| `useItem(itemId, requestId)`                         | Use a catalog `usable` item                                                              |
+| `claimReward(rewardId, requestId)`                   | Catalog reward with server-side claim cap                                                |
+| `submitIapPurchase(purchaseToken, productId)`        | Google Play token verification + one-time fulfillment                                    |
 
 `QueuedRun`: `{ gameId, adapterId, runId, payload, candidates, expiresAt? }`. `CandidateValue`: `{ boardId, periodKey, value, direction }`. Storage keys: `bantam:{gameId}:session` and `bantam:{gameId}:queue`. Default timeout 10s.
 
 ## Env names only
 
-| Name                                | Purpose                    |
-| ----------------------------------- | -------------------------- |
-| `${secretPrefix}_IDENTITY_SALT`     | HMAC player pseudonyms     |
-| `${secretPrefix}_SESSION_SECRET`    | Access tokens              |
-| `${secretPrefix}_CURSOR_SECRET`     | Leaderboard cursors        |
-| `${secretPrefix}_PGS_CLIENT_ID`     | Required if `pgs-v2`       |
-| `${secretPrefix}_PGS_CLIENT_SECRET` | Required if `pgs-v2`       |
-| `BANTAM_ADAPTERS_DIR`               | Default `/bantam/adapters` |
-| `BANTAM_DATA_DIR`                   | Default `/data`            |
-| `BANTAM_CONFIG_FILE`                | Optional manifest mount    |
-| `BANTAM_ALLOWED_ORIGINS`            | CORS allow list            |
-| `BANTAM_ONLY_GAME`                  | Load a single game id      |
-| `BANTAM_METRICS_TOKEN`              | Optional metrics gate      |
-| `PORT`                              | Default 3000               |
+| Name                                               | Purpose                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------- |
+| `${secretPrefix}_IDENTITY_SALT`                    | HMAC player pseudonyms                                           |
+| `${secretPrefix}_SESSION_SECRET`                   | Access tokens                                                    |
+| `${secretPrefix}_CURSOR_SECRET`                    | Leaderboard cursors                                              |
+| `${secretPrefix}_PGS_CLIENT_ID`                    | Required if `pgs-v2`                                             |
+| `${secretPrefix}_PGS_CLIENT_SECRET`                | Required if `pgs-v2`                                             |
+| `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Service-account JSON if the catalog has Google Play IAP products |
+| `BANTAM_ADAPTERS_DIR`                              | Default `/bantam/adapters`                                       |
+| `BANTAM_DATA_DIR`                                  | Default `/data`                                                  |
+| `BANTAM_CONFIG_FILE`                               | Optional manifest mount                                          |
+| `BANTAM_ALLOWED_ORIGINS`                           | CORS allow list                                                  |
+| `BANTAM_ONLY_GAME`                                 | Load a single game id                                            |
+| `BANTAM_METRICS_TOKEN`                             | Optional metrics gate                                            |
+| `PORT`                                             | Default 3000                                                     |
 
 Never paste values. Operator admin path: `deploy/credentials.local/admin.env`.

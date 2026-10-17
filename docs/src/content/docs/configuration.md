@@ -39,6 +39,8 @@ Each entry declares `id`, `displayName`, `adapters`, `secretPrefix`, `gracePerio
 
 Set `BANTAM_ONLY_GAME=<id>` to load only that title while preserving the same game-qualified URLs.
 
+Optional `economy` adds currencies, items, store offers, claimable rewards, and Google Play IAP products for that title. The catalog is configuration-only; balances and ownership persist in the game SQLite file. See [Game economy](/economy/).
+
 See [Authoring — Generic boards](/generic-boards/) and [Authoring — File adapters](/adapter-authoring/) for the full contract.
 
 ## Editing from the dashboard
@@ -60,7 +62,13 @@ For `authProvider: "pgs-v2"`, additionally:
 - `BANTAM_GAME_DEMO_PGS_CLIENT_ID`
 - `BANTAM_GAME_DEMO_PGS_CLIENT_SECRET`
 
-Every value must be at least 16 characters. Use independent random values per title and purpose. Rotating the identity salt changes player pseudonyms and must be treated as an account migration. Rotating the session secret immediately invalidates access tokens; refresh sessions can then mint new ones only if the signing change is coordinated. **Per-game secrets are read from env at boot and at each manifest reload; rotating requires a container restart.**
+If the catalog includes `iapProducts` with `provider: "google_play"`, also supply:
+
+- `BANTAM_GAME_DEMO_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`
+
+That value is a Google Play service-account JSON object used only for Android Publisher verification. The health page reports presence, never the contents.
+
+Every value must be at least 16 characters (the service-account JSON is longer). Use independent random values per title and purpose. Rotating the identity salt changes player pseudonyms and must be treated as an account migration. Rotating the session secret immediately invalidates access tokens; refresh sessions can then mint new ones only if the signing change is coordinated. **Per-game secrets are read from env at boot and at each manifest reload; rotating requires a container restart.**
 
 ## Adapter directory
 
