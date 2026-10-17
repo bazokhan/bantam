@@ -118,6 +118,8 @@ export class GameDatabase {
     idempotencyKey: string,
     now: number,
   ): WalletMutationResult {
+    if (!Number.isSafeInteger(amount) || amount <= 0)
+      throw new BantamError("invalid-amount", "Currency amount must be a positive safe integer", 400);
     return this.mutateCurrency(playerId, currencyId, amount, reason, idempotencyKey, now);
   }
 
@@ -129,6 +131,8 @@ export class GameDatabase {
     idempotencyKey: string,
     now: number,
   ): WalletMutationResult {
+    if (!Number.isSafeInteger(amount) || amount <= 0)
+      throw new BantamError("invalid-amount", "Currency amount must be a positive safe integer", 400);
     return this.mutateCurrency(playerId, currencyId, -amount, reason, idempotencyKey, now);
   }
 
