@@ -1,6 +1,7 @@
 # Game Economy Extension Plan
 
-Status: Phased implementation plan. Phase 1 is implemented on this branch; phases 2–5 remain planned pending review and merge.
+Status: Phased implementation plan. Phase 1 is implemented on this branch; phases 2–5 remain
+planned pending review and merge.
 
 ## Goal
 
