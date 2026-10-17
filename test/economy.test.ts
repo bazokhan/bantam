@@ -42,7 +42,14 @@ describe("economy foundation", () => {
       addPlayer(db);
       expect(db.getWallet("player-1")).toEqual([]);
 
-      const credit = db.creditCurrency("player-1", "coins", 250, "mission_reward", "reward-1", 2_000);
+      const credit = db.creditCurrency(
+        "player-1",
+        "coins",
+        250,
+        "mission_reward",
+        "reward-1",
+        2_000,
+      );
       expect(credit).toEqual({ balance: 250, transactionId: expect.any(Number), replayed: false });
       const debit = db.debitCurrency("player-1", "coins", 75, "test_spend", "spend-1", 3_000);
       expect(debit).toEqual({ balance: 175, transactionId: expect.any(Number), replayed: false });
@@ -72,10 +79,24 @@ describe("economy foundation", () => {
     const db = openDb(temp());
     try {
       addPlayer(db);
-      const original = db.creditCurrency("player-1", "coins", 100, "mission_reward", "reward-1", 2_000);
+      const original = db.creditCurrency(
+        "player-1",
+        "coins",
+        100,
+        "mission_reward",
+        "reward-1",
+        2_000,
+      );
       db.creditCurrency("player-1", "coins", 20, "mission_reward", "reward-2", 3_000);
 
-      const replay = db.creditCurrency("player-1", "coins", 100, "mission_reward", "reward-1", 9_000);
+      const replay = db.creditCurrency(
+        "player-1",
+        "coins",
+        100,
+        "mission_reward",
+        "reward-1",
+        9_000,
+      );
       expect(replay).toEqual({ ...original, replayed: true });
       expect(db.getWallet("player-1")).toEqual([{ currencyId: "coins", balance: 120 }]);
       expect(db.listWalletTransactions("player-1")).toHaveLength(2);
@@ -102,7 +123,9 @@ describe("economy foundation", () => {
     }
   });
 
-  it("rejects invalid amounts, currency identifiers, reasons, keys, timestamps, and missing players", () => {
+  it(
+    "rejects invalid amounts, currency identifiers, reasons, keys, timestamps, and missing players",
+    () => {
     const db = openDb(temp());
     try {
       addPlayer(db);
@@ -129,7 +152,9 @@ describe("economy foundation", () => {
     }
   });
 
-  it("does not allow overspending, negative balances, or balances outside safe integer range", () => {
+  it(
+    "does not allow overspending, negative balances, or balances outside safe integer range",
+    () => {
     const db = openDb(temp());
     try {
       addPlayer(db);
@@ -165,7 +190,9 @@ describe("economy foundation", () => {
     }
   });
 
-  it("shares balances across database connections and rejects a second spend that exceeds the remainder", () => {
+  it(
+    "shares balances across database connections and rejects a second spend that exceeds the remainder",
+    () => {
     const root = temp();
     const first = openDb(root);
     const second = openDb(root);
@@ -183,7 +210,9 @@ describe("economy foundation", () => {
     }
   });
 
-  it("cascades economy data when a player is deleted, preserving existing data-erasure semantics", () => {
+  it(
+    "cascades economy data when a player is deleted, preserving existing data-erasure semantics",
+    () => {
     const db = openDb(temp());
     try {
       addPlayer(db);
@@ -196,7 +225,9 @@ describe("economy foundation", () => {
     }
   });
 
-  it("upgrades an existing database without changing players, flags, runs, or leaderboard behavior", () => {
+  it(
+    "upgrades an existing database without changing players, flags, runs, or leaderboard behavior",
+    () => {
     const root = temp();
     const oldMigrations = join(root, "old-migrations");
     cpSync(join(process.cwd(), "migrations"), oldMigrations, { recursive: true });
@@ -206,7 +237,13 @@ describe("economy foundation", () => {
     try {
       oldDb.upsertPlayer("legacy-player", "development", "Legacy Player", 1_000);
       oldDb.upsertFlag(
-        { key: "existing_flag", description: "existing", enabled: true, rolloutPercent: 100, value: "on" },
+        {
+          key: "existing_flag",
+          description: "existing",
+          enabled: true,
+          rolloutPercent: 100,
+          value: "on",
+        },
         1_100,
       );
       const board = { id: "score", direction: "higher" as const, period: "all_time" as const };
@@ -226,14 +263,22 @@ describe("economy foundation", () => {
 
     const upgraded = new GameDatabase(path, join(process.cwd(), "migrations"));
     try {
-      expect(upgraded.getPlayer("legacy-player")).toEqual({ id: "legacy-player", displayName: "Legacy Player" });
+      expect(upgraded.getPlayer("legacy-player")).toEqual({
+        id: "legacy-player",
+        displayName: "Legacy Player",
+      });
       expect(upgraded.listFlags().map((flag) => flag.key)).toEqual(["existing_flag"]);
       expect(upgraded.list({ id: "score", direction: "higher", period: "all_time" }, "all_time", 0, 10))
         .toMatchObject([{ displayName: "Legacy Player", value: 42, rank: 1 }]);
       expect(upgraded.getWallet("legacy-player")).toEqual([]);
-      expect(upgraded.creditCurrency("legacy-player", "coins", 5, "mission_reward", "new-reward", 2_000).balance)
+      expect(
+        upgraded.creditCurrency("legacy-player", "coins", 5, "mission_reward", "new-reward", 2_000)
+          .balance,
+      )
         .toBe(5);
-      expect(upgraded.db.prepare("SELECT version FROM schema_migrations ORDER BY version").pluck().all())
+      expect(
+        upgraded.db.prepare("SELECT version FROM schema_migrations ORDER BY version").pluck().all(),
+      )
         .toEqual([1, 2, 3, 4]);
       expect(upgraded.integrity()).toEqual(["ok"]);
     } finally {
