@@ -100,7 +100,11 @@ export class GameDatabase {
 
   listWalletTransactions(playerId: string, limit = 100): WalletTransactionRow[] {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
-      throw new BantamError("invalid-limit", "Wallet transaction limit must be an integer from 1 to 500", 400);
+      throw new BantamError(
+        "invalid-limit",
+        "Wallet transaction limit must be an integer from 1 to 500",
+        400,
+      );
     return this.db
       .prepare(
         `SELECT id, player_id playerId, currency_id currencyId, amount, reason,
@@ -145,9 +149,17 @@ export class GameDatabase {
     now: number,
   ): WalletMutationResult {
     if (!playerId || playerId.length > 128)
-      throw new BantamError("invalid-player", "Player id is required and must be at most 128 characters", 400);
+      throw new BantamError(
+        "invalid-player",
+        "Player id is required and must be at most 128 characters",
+        400,
+      );
     if (!/^[a-z][a-z0-9_-]{0,47}$/.test(currencyId))
-      throw new BantamError("invalid-currency", "Currency id must be lowercase and use letters, digits, _ or -", 400);
+      throw new BantamError(
+        "invalid-currency",
+        "Currency id must be lowercase and use letters, digits, _ or -",
+        400,
+      );
     if (!Number.isSafeInteger(delta) || delta === 0)
       throw new BantamError("invalid-amount", "Currency amount must be a non-zero safe integer", 400);
     if (!/^[a-z][a-z0-9_.:-]{0,63}$/.test(reason))
@@ -158,7 +170,11 @@ export class GameDatabase {
       idempotencyKey.trim() !== idempotencyKey ||
       /[\u0000-\u001f\u007f]/u.test(idempotencyKey)
     )
-      throw new BantamError("invalid-idempotency-key", "Idempotency key must be 1-128 printable characters", 400);
+      throw new BantamError(
+        "invalid-idempotency-key",
+        "Idempotency key must be 1-128 printable characters",
+        400,
+      );
     if (!Number.isSafeInteger(now) || now < 0)
       throw new BantamError("invalid-timestamp", "Timestamp must be a non-negative safe integer", 400);
 
@@ -205,7 +221,11 @@ export class GameDatabase {
           throw new BantamError("insufficient-funds", "Insufficient currency balance", 409);
         const nextBalance = currentBalance + delta;
         if (!Number.isSafeInteger(nextBalance) || nextBalance < 0)
-          throw new BantamError("balance-overflow", "Currency balance would exceed the supported integer range", 409);
+          throw new BantamError(
+            "balance-overflow",
+            "Currency balance would exceed the supported integer range",
+            409,
+          );
 
         this.db
           .prepare(
