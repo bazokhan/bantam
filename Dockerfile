@@ -1,4 +1,4 @@
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS build
+FROM node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY packages/sdk/package.json packages/sdk/package.json
@@ -8,15 +8,23 @@ COPY src src
 COPY packages packages
 RUN npm run build && npm prune --omit=dev
 
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7
+FROM node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
 ARG LITESTREAM_VERSION=0.5.16
 ARG TARGETARCH
-RUN set -eux; arch="${TARGETARCH}"; if [ "${arch}" = "amd64" ]; then arch="x86_64"; fi; asset="litestream-${LITESTREAM_VERSION}-linux-${arch}.tar.gz"; \
-    apt-get update; apt-get install -y --no-install-recommends ca-certificates curl; \
+# Pull Debian security updates, install only what litestream fetch needs, then
+# drop curl so scanners stop flagging a fetch tool that is unused at runtime.
+RUN set -eux; \
+    apt-get update; \
+    apt-get upgrade -y --no-install-recommends; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
+    arch="${TARGETARCH}"; if [ "${arch}" = "amd64" ]; then arch="x86_64"; fi; \
+    asset="litestream-${LITESTREAM_VERSION}-linux-${arch}.tar.gz"; \
     curl -fsSLo "/tmp/${asset}" "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/${asset}"; \
     curl -fsSLo /tmp/checksums.txt "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/checksums.txt"; \
     cd /tmp; grep "  ${asset}$" checksums.txt | sha256sum -c -; \
-    tar -xzf "${asset}"; install -m 0755 litestream /usr/local/bin/litestream; rm -rf /tmp/* /var/lib/apt/lists/*
+    tar -xzf "${asset}"; install -m 0755 litestream /usr/local/bin/litestream; \
+    apt-get purge -y --auto-remove curl; \
+    rm -rf /tmp/* /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build --chown=node:node /app/dist dist
 COPY --from=build --chown=node:node /app/node_modules node_modules
