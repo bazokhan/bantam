@@ -775,6 +775,7 @@ describe("admin dashboard P1 — players list and delete", () => {
       expect((page.body.match(/<summary>Delete player<\/summary>/g) ?? []).length).toBe(2);
       // Provider badge shows the known label.
       expect(page.body).toMatch(/development/);
+      expect(page.body).toMatch(/\/admin\/games\/demo\/players\/p_/);
       // Pick the first player's id from the rendered row (truncated, 8 chars).
       const idMatch = page.body.match(/<code title="(p_[0-9a-f]+)">(p_[0-9a-f]{0,8})<\/code>/);
       expect(idMatch).toBeTruthy();
@@ -867,6 +868,7 @@ describe("admin dashboard P2 — settings form, prod guard, rollback", () => {
       const page = await app.inject({ method: "GET", url: "/admin/games/demo", headers: { cookie } });
       expect(page.body).toMatch(/Demo Renamed/);
       expect(page.body).toMatch(/48 hours/);
+      expect(page.body).toMatch(/No economy catalog/);
     } finally {
       delete process.env.BANTAM_DATA_DIR;
       clearDemoEnv();
@@ -984,6 +986,70 @@ describe("admin dashboard P2 — settings form, prod guard, rollback", () => {
       delete process.env.BANTAM_GAME_DEMO_CURSOR_SECRET;
       delete process.env.BANTAM_GAME_DEMO_PGS_CLIENT_ID;
       delete process.env.BANTAM_GAME_DEMO_PGS_CLIENT_SECRET;
+      clearDemoEnv();
+      await app.close();
+    }
+  }, 30_000);
+
+  it("form path can write a typed economy catalog", async () => {
+    const dataDir = temp();
+    setDemoEnv();
+    process.env.BANTAM_DATA_DIR = dataDir;
+    writeFileSync(
+      join(dataDir, "games.json"),
+      JSON.stringify({
+        environment: "development",
+        games: [
+          {
+            id: "demo",
+            displayName: "Demo",
+            adapters: [
+              { kind: "generic", boards: [{ id: "high_score", direction: "higher", period: "all_time" }] },
+            ],
+            secretPrefix: "TEST",
+            gracePeriodHours: 24,
+            authProvider: "development",
+          },
+        ],
+      }),
+    );
+    const app = await buildApp(loadConfig(join(dataDir, "games.json")), { logger: false });
+    try {
+      const cookie = await adminCookie(app);
+      const save = await app.inject({
+        method: "POST",
+        url: "/admin/manifest",
+        payload: [
+          "environment=development",
+          "game[0].id=demo",
+          "game[0].displayName=Demo",
+          "game[0].authProvider=development",
+          "game[0].gracePeriodHours=24",
+          "game[0].secretPrefix=TEST",
+          "game[0].economy.edit=1",
+          "game[0].currency[0].id=coins",
+          "game[0].item[0].id=extra_life",
+          "game[0].item[0].type=consumable",
+          "game[0].item[0].stackable=true",
+          "game[0].item[0].usable=true",
+          "game[0].offer[0].id=life_pack",
+          "game[0].offer[0].itemId=extra_life",
+          "game[0].offer[0].quantity=2",
+          "game[0].offer[0].priceCurrencyId=coins",
+          "game[0].offer[0].priceAmount=40",
+          "game[0].offer[0].active=true",
+        ].join("&"),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+      });
+      expect(save.statusCode).toBe(302);
+      const page = await app.inject({ method: "GET", url: "/admin/games/demo", headers: { cookie } });
+      expect(page.body).toMatch(/extra_life/);
+      expect(page.body).toMatch(/life_pack/);
+      const overview = await app.inject({ method: "GET", url: "/admin/", headers: { cookie } });
+      expect(overview.body).toMatch(/action="\/admin\/logout"/);
+      expect(overview.body).not.toMatch(/href="\/admin\/logout"/);
+    } finally {
+      delete process.env.BANTAM_DATA_DIR;
       clearDemoEnv();
       await app.close();
     }

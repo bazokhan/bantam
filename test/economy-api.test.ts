@@ -422,6 +422,31 @@ describe("economy admin", () => {
         payload: "currencyId=coins&amount=1&direction=credit&requestId=sneaky",
       });
       expect(unauth.statusCode).toBe(401);
+
+      const unknown = await app.inject({
+        method: "POST",
+        url: `/admin/games/demo/players/${encodeURIComponent(playerId)}/currency`,
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+        payload: "currencyId=not_a_currency&amount=1&direction=credit&requestId=admin-bad-1",
+      });
+      expect(String(unknown.headers["location"])).toMatch(/error=/);
+
+      const gamePage = await app.inject({
+        method: "GET",
+        url: "/admin/games/demo",
+        headers: { cookie },
+      });
+      expect(gamePage.body).toMatch(/id="catalog"/);
+      expect(gamePage.body).toMatch(/coins/);
+      expect(gamePage.body).toMatch(/subnav/);
+
+      const playerPage = await app.inject({
+        method: "GET",
+        url: `/admin/games/demo/players/${encodeURIComponent(playerId)}`,
+        headers: { cookie },
+      });
+      expect(playerPage.body).toMatch(/<select name="currencyId"/);
+      expect(playerPage.body).toMatch(/<select name="itemId"/);
     } finally {
       await app.close();
     }

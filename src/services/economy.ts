@@ -193,6 +193,12 @@ export function parseEconomyCatalog(value: unknown, path: string): EconomyCatalo
   return catalog;
 }
 
+export function catalogCurrency(catalog: EconomyCatalog | undefined, currencyId: string): EconomyCurrency {
+  const currency = catalog?.currencies.find((row) => row.id === currencyId);
+  if (!currency) throw new BantamError("currency-not-found", "Currency is not in this game catalog", 404);
+  return currency;
+}
+
 export function catalogItem(catalog: EconomyCatalog | undefined, itemId: string): EconomyItem {
   const item = catalog?.items.find((row) => row.id === itemId);
   if (!item) throw new BantamError("item-not-found", "Item is not in this game catalog", 404);

@@ -18,7 +18,7 @@ Clients cannot `setBalance`, forge a price, or grant themselves items. A purchas
 
 ## Catalog (configuration)
 
-Item definitions, offers, claimable rewards, and IAP products are versioned per title in the game manifest. There is no catalog editor in v1; edit `games.json` (or the admin Advanced JSON panel) and reload.
+Item definitions, offers, claimable rewards, and IAP products are versioned per title in the game manifest. Operators edit them in the admin Manifest form; Advanced JSON remains for add/remove game and adapter specs. A save validates the same catalog schema the runtime uses.
 
 ```json
 {

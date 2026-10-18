@@ -15,7 +15,8 @@ import {
 } from "../auth/admin.js";
 import type { AdminDatabase } from "../db/admin-database.js";
 import { BantamError } from "../errors.js";
-import { catalogItem, googlePlayServiceAccountEnv } from "../services/economy.js";
+import { catalogCurrency, catalogItem, googlePlayServiceAccountEnv } from "../services/economy.js";
+import { applyEconomyFromForm, currencyOptions, itemOptions, renderEconomyFields } from "./economy-form.js";
 import type { AdapterSpec, BoardDefinition, RuntimeGame } from "../types.js";
 import {
   clearCookieValue,
@@ -39,6 +40,7 @@ import {
   errorList,
   escapeHtml,
   field,
+  gameSubnav,
   kpi,
   pageHead,
   publicShell,
@@ -77,6 +79,59 @@ function truncateId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8);
 }
 
+function catalogSection(catalog: RuntimeGame["economy"]): string {
+  const edit = `<a class="btn secondary small" href="/admin/manifest">Edit catalog</a>`;
+  if (!catalog) {
+    return `<section class="card" id="catalog">
+      <h3>Catalog</h3>
+      ${banner("No economy catalog on this game.", "warn", "Economy off")}
+      <p class="muted">Add currencies, items, and offers in the manifest form. Grant forms on a player page stay hidden until a catalog exists.</p>
+      ${edit}
+    </section>`;
+  }
+  const currencyRows = catalog.currencies.map((row) => [
+    { html: `<code>${escapeHtml(row.id)}</code>`, label: "currency" },
+  ]);
+  const itemRows = catalog.items.map((row) => [
+    { html: `<code>${escapeHtml(row.id)}</code>`, label: "item" },
+    { html: escapeHtml(row.type), label: "type" },
+    { html: row.stackable ? "yes" : "no", label: "stackable" },
+    { html: row.usable ? "yes" : "no", label: "usable" },
+  ]);
+  const offerRows = catalog.offers.map((row) => [
+    { html: `<code>${escapeHtml(row.id)}</code>`, label: "offer" },
+    { html: `<code>${escapeHtml(row.itemId)}</code> × ${row.quantity}`, label: "item" },
+    { html: `${row.priceAmount} ${escapeHtml(row.priceCurrencyId)}`, label: "price" },
+    { html: row.active === false ? "off" : "on", label: "active" },
+  ]);
+  const rewardRows = (catalog.rewards ?? []).map((row) => [
+    { html: `<code>${escapeHtml(row.id)}</code>`, label: "reward" },
+    { html: String(row.grants.length), label: "grants", numeric: true },
+    { html: row.maxClaims == null ? "1" : String(row.maxClaims), label: "max claims" },
+  ]);
+  const iapRows = (catalog.iapProducts ?? []).map((row) => [
+    { html: `<code>${escapeHtml(row.id)}</code>`, label: "product" },
+    { html: escapeHtml(row.provider), label: "provider" },
+    { html: `<code>${escapeHtml(row.providerProductId)}</code>`, label: "play id" },
+  ]);
+  return `<section class="card" id="catalog">
+    <h3>Catalog</h3>
+    <dl class="kv">
+      <dt>Currencies</dt><dd>${catalog.currencies.length}</dd>
+      <dt>Items</dt><dd>${catalog.items.length}</dd>
+      <dt>Offers</dt><dd>${catalog.offers.length}</dd>
+      <dt>Rewards</dt><dd>${(catalog.rewards ?? []).length}</dd>
+      <dt>IAP</dt><dd>${(catalog.iapProducts ?? []).length}</dd>
+    </dl>
+    ${currencyRows.length ? renderTable(["currency"], currencyRows) : ""}
+    ${itemRows.length ? renderTable(["item", "type", "stackable", "usable"], itemRows) : ""}
+    ${offerRows.length ? renderTable(["offer", "item", "price", "active"], offerRows) : ""}
+    ${rewardRows.length ? renderTable(["reward", "grants", "max claims"], rewardRows) : ""}
+    ${iapRows.length ? renderTable(["product", "provider", "play id"], iapRows) : ""}
+    ${edit}
+  </section>`;
+}
+
 export async function registerAdmin(
   app: FastifyInstance,
   adminDb: AdminDatabase,
@@ -95,7 +150,6 @@ export async function registerAdmin(
       { href: "/admin/adapters", label: "Adapters" },
       { href: "/admin/health", label: "Health" },
       { href: "/admin/manifest", label: "Manifest" },
-      { href: "/admin/logout", label: "Log out" },
     ].map((item) => ({ ...item, active: active === item.href || active.startsWith(item.href + "?") }));
 
   const countAdmins = () => adminDb.countAdmins();
@@ -466,13 +520,10 @@ export async function registerAdmin(
       label: key,
     }));
     const ready = runtime.db.ready();
-    const actions = `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/players">Players</a>
-      <a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/flags">Flags</a>
-      <a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/runs">Recent runs</a>
-      <a class="btn secondary" href="/admin/manifest">Edit manifest</a>`;
-    const body = `${pageHead(
+    const actions = `<a class="btn secondary" href="/admin/manifest">Edit manifest</a>`;
+    const body = `${gameSubnav(runtime.game.id, "game")}${pageHead(
       runtime.game.displayName,
-      `${runtime.game.id} · ${badge(runtime.game.authProvider)}`,
+      `${runtime.game.id} · ${runtime.game.authProvider}`,
       actions,
     )}
       <section class="card stack">
@@ -507,7 +558,8 @@ export async function registerAdmin(
             : banner("No env vars required for this provider.", "warn")
         }
         <p class="muted" style="margin-top:0.5rem">Names only — values are never shown.</p>
-      </section>`;
+      </section>
+      ${catalogSection(runtime.game.economy)}`;
     return reply.type("text/html").send(shell(runtime.game.id, body, nav("/admin/games")));
   });
 
@@ -532,10 +584,9 @@ export async function registerAdmin(
             label: "adapter",
           },
         ]);
-    const body = `${pageHead(
+    const body = `${gameSubnav(runtime.game.id, "boards")}${pageHead(
       `Boards · ${runtime.game.displayName}`,
       `${runtime.game.id} — ${rows.length} board${rows.length === 1 ? "" : "s"} loaded.`,
-      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
     )}${rows.length ? renderTable(["board", "direction", "period", "completed-only", "adapter"], rows) : banner("No boards loaded.", "warn")}`;
     return reply.type("text/html").send(shell("Boards", body, nav("/admin/games")));
   });
@@ -564,10 +615,9 @@ export async function registerAdmin(
         { html: String(entry.value), label: "value", numeric: true },
       ]);
       const foot = `Showing ${rows.length === 50 ? "up to 50" : rows.length} entries · period ${escapeHtml(periodKey)}`;
-      const body = `${pageHead(
+      const body = `${gameSubnav(runtime.game.id, "boards")}${pageHead(
         board.id,
-        `${runtime.game.displayName} · <code>${escapeHtml(adapterId ?? "?")}</code> · ${escapeHtml(board.direction)} · ${escapeHtml(board.period)}${board.completedOnly ? " · completed-only" : ""}`,
-        `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/boards">All boards</a>`,
+        `${runtime.game.displayName} · ${adapterId ?? "?"} · ${board.direction} · ${board.period}${board.completedOnly ? " · completed-only" : ""}`,
       )}
       ${tableRows.length ? renderTable(["rank", "player", "value"], tableRows, foot) : banner("No scores yet for this period.", "warn", "Empty board")}`;
       return reply.type("text/html").send(shell(board.id, body, nav("/admin/games")));
@@ -591,10 +641,9 @@ export async function registerAdmin(
         },
       ],
     );
-    const body = `${pageHead(
+    const body = `${gameSubnav(runtime.game.id, "runs")}${pageHead(
       `Runs · ${runtime.game.displayName}`,
       "Last 20. Payload bodies are redacted; only the payload hash is shown so you can spot duplicates without exposing player data.",
-      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
     )}${rows.length ? renderTable(["runId", "adapter", "createdAt", "payloadHash"], rows) : banner("No runs recorded.", "warn")}`;
     return reply.type("text/html").send(shell("Runs", body, nav("/admin/games")));
   });
@@ -607,11 +656,14 @@ export async function registerAdmin(
     const players = runtime.db.listPlayers(200);
     const rows = players.map((player) => [
       {
-        html: `<a href="/admin/games/${escapeHtml(runtime.game.id)}/players/${encodeURIComponent(player.id)}"><code title="${escapeHtml(player.id)}">${escapeHtml(truncateId(player.id))}</code></a>`,
+        html: `<code title="${escapeHtml(player.id)}">${escapeHtml(truncateId(player.id))}</code>`,
         label: "id",
       },
       { html: badge(player.provider), label: "provider" },
-      { html: escapeHtml(player.displayName), label: "display name" },
+      {
+        html: `<a href="/admin/games/${escapeHtml(runtime.game.id)}/players/${encodeURIComponent(player.id)}">${escapeHtml(player.displayName)}</a>`,
+        label: "display name",
+      },
       { html: escapeHtml(new Date(player.createdAt).toISOString()), label: "created (UTC)" },
       {
         html: `<form method="post" action="/admin/games/${escapeHtml(runtime.game.id)}/players/delete">
@@ -621,10 +673,9 @@ export async function registerAdmin(
         label: "actions",
       },
     ]);
-    const body = `${pageHead(
+    const body = `${gameSubnav(runtime.game.id, "players")}${pageHead(
       `Players · ${runtime.game.displayName}`,
       `Most recent ${players.length} of this game. Delete removes the player row, refresh sessions, leaderboard entries, runs, and economy data. Audit log captures the operator and truncated id.`,
-      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
     )}
     ${players.length ? renderTable(["id", "provider", "display name", "created (UTC)", "actions"], rows) : banner("No players have signed into this game yet.", "warn", "Empty")}`;
     return reply.type("text/html").send(shell("Players", body, nav("/admin/games")));
@@ -698,10 +749,29 @@ export async function registerAdmin(
         { html: escapeHtml(new Date(row.createdAt).toISOString()), label: "when" },
       ]);
       const action = `/admin/games/${escapeHtml(runtime.game.id)}/players/${encodeURIComponent(player.id)}`;
-      const body = `${pageHead(
+      const currencies = currencyOptions(runtime.game.economy);
+      const items = itemOptions(runtime.game.economy);
+      const currencyForm = currencies
+        ? `<form class="form" method="post" action="${action}/currency">
+          ${field("Currency", `<select name="currencyId" required>${currencies}</select>`, "", true)}
+          ${field("Amount", '<input type="number" name="amount" required min="1" step="1">', "Positive integer. Debit uses the same field.", true)}
+          ${field("Direction", '<select name="direction"><option value="credit">Credit</option><option value="debit">Debit</option></select>')}
+          ${field("Idempotency key", `<input type="text" name="requestId" required maxlength="128" value="admin-${randomUUID()}">`, "", true)}
+          <div class="form-actions"><button type="submit" class="btn primary">Apply currency</button></div>
+        </form>`
+        : banner("No currencies in the catalog. Add them on the Manifest page.", "warn");
+      const itemForm = items
+        ? `<form class="form" method="post" action="${action}/item">
+          ${field("Item", `<select name="itemId" required>${items}</select>`, "Must exist in the game catalog.", true)}
+          ${field("Quantity", '<input type="number" name="quantity" required min="1" step="1" value="1">', "", true)}
+          ${field("Direction", '<select name="direction"><option value="grant">Grant</option><option value="remove">Remove</option></select>')}
+          ${field("Idempotency key", `<input type="text" name="requestId" required maxlength="128" value="admin-${randomUUID()}">`, "", true)}
+          <div class="form-actions"><button type="submit" class="btn primary">Apply item</button></div>
+        </form>`
+        : banner("No items in the catalog. Add them on the Manifest page.", "warn");
+      const body = `${gameSubnav(runtime.game.id, "players")}${pageHead(
         player.displayName,
-        `Economy inspection for ${escapeHtml(truncateId(player.id))}. Manual changes write the same ledger as player operations. Purchase tokens are never shown.`,
-        `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/players">All players</a>`,
+        `Economy for ${truncateId(player.id)}. Manual changes write the same ledger as player operations. Purchase tokens are never shown.`,
       )}
       ${saveError ? banner(escapeHtml(saveError), "bad", "Could not apply") : ""}
       <section class="card">
@@ -726,23 +796,11 @@ export async function registerAdmin(
       </section>
       <section class="card">
         <h3>Adjust currency</h3>
-        <form class="form" method="post" action="${action}/currency">
-          ${field("Currency id", '<input type="text" name="currencyId" required maxlength="48" pattern="[a-z][a-z0-9_-]*">', "", true)}
-          ${field("Amount", '<input type="number" name="amount" required min="1" step="1">', "Positive integer. Debit uses the same field.", true)}
-          ${field("Direction", '<select name="direction"><option value="credit">Credit</option><option value="debit">Debit</option></select>')}
-          ${field("Idempotency key", `<input type="text" name="requestId" required maxlength="128" value="admin-${randomUUID()}">`, "", true)}
-          <div class="form-actions"><button type="submit" class="btn primary">Apply currency</button></div>
-        </form>
+        ${currencyForm}
       </section>
       <section class="card">
         <h3>Adjust inventory</h3>
-        <form class="form" method="post" action="${action}/item">
-          ${field("Item id", '<input type="text" name="itemId" required maxlength="48" pattern="[a-z][a-z0-9_-]*">', "Must exist in the game catalog.", true)}
-          ${field("Quantity", '<input type="number" name="quantity" required min="1" step="1" value="1">', "", true)}
-          ${field("Direction", '<select name="direction"><option value="grant">Grant</option><option value="remove">Remove</option></select>')}
-          ${field("Idempotency key", `<input type="text" name="requestId" required maxlength="128" value="admin-${randomUUID()}">`, "", true)}
-          <div class="form-actions"><button type="submit" class="btn primary">Apply item</button></div>
-        </form>
+        ${itemForm}
       </section>`;
       return reply.type("text/html").send(shell(player.displayName, body, nav("/admin/games")));
     },
@@ -761,6 +819,7 @@ export async function registerAdmin(
     if (!runtime.db.getPlayer(playerId)) return reply.code(404).type("text/plain").send("player not found");
     try {
       const currencyId = typeof request.body?.currencyId === "string" ? request.body.currencyId : "";
+      catalogCurrency(runtime.game.economy, currencyId);
       const amount = Number(request.body?.amount);
       const requestId = typeof request.body?.requestId === "string" ? request.body.requestId : "";
       const direction = request.body?.direction === "debit" ? "debit" : "credit";
@@ -924,10 +983,9 @@ export async function registerAdmin(
         label: "actions",
       },
     ]);
-    const body = `${pageHead(
+    const body = `${gameSubnav(runtime.game.id, "flags")}${pageHead(
       `Flags · ${runtime.game.displayName}`,
-      `${rows.length} flag${rows.length === 1 ? "" : "s"} (max ${FLAG_MAX}). Clients read flags from GET /v1/games/${escapeHtml(runtime.game.id)}/flags; only operators change them.`,
-      `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}">Back to game</a>`,
+      `${rows.length} flag${rows.length === 1 ? "" : "s"} (max ${FLAG_MAX}). Clients read flags from GET /v1/games/${runtime.game.id}/flags; only operators change them.`,
     )}
       ${saveError ? banner(escapeHtml(saveError), "bad", "Could not save") : ""}
       <section class="card">
@@ -984,10 +1042,9 @@ export async function registerAdmin(
       if (!runtime) return reply.code(404).type("text/plain").send("game not found");
       const flag = runtime.db.getFlag(request.params.key);
       if (!flag) return reply.code(404).type("text/plain").send("flag not found");
-      const body = `${pageHead(
+      const body = `${gameSubnav(runtime.game.id, "flags")}${pageHead(
         flag.key,
-        `${runtime.game.displayName} · updated ${escapeHtml(new Date(flag.updatedAt).toISOString())}`,
-        `<a class="btn secondary" href="/admin/games/${escapeHtml(runtime.game.id)}/flags">All flags</a>`,
+        `${runtime.game.displayName} · updated ${new Date(flag.updatedAt).toISOString()}`,
       )}
       <section class="card">
         <form class="form" method="post" action="/admin/games/${escapeHtml(runtime.game.id)}/flags/${encodeURIComponent(flag.key)}">
@@ -1228,6 +1285,10 @@ export async function registerAdmin(
               <label>Adapters (read-only here)</label>
               <ul style="margin:0.25rem 0;padding-left:1.25rem">${adapterLines || '<li class="muted">(none)</li>'}</ul>
             </div>
+            <div class="field">
+              <label>Economy catalog</label>
+              ${renderEconomyFields(index, game.economy, editorDisabled)}
+            </div>
           </fieldset>`;
           })
           .join("")}</div>`
@@ -1250,7 +1311,7 @@ export async function registerAdmin(
     </div>`;
     const body = `${pageHead(
       "Manifest",
-      "Edit existing fields inline. Adding or removing games requires the Advanced JSON disclosure.",
+      "Edit existing fields and the economy catalog inline. Adding or removing games requires Advanced JSON.",
       `<span class="muted">last save: ${loaded.writable ? "live reload" : "read-only"}</span>`,
     )}
       ${meta}
@@ -1277,7 +1338,7 @@ export async function registerAdmin(
       <details class="disclosure">
         <summary>Advanced JSON</summary>
         <div class="body">
-          <p class="muted">Use this to add or remove games, or to edit adapter specs (which the form does not expose).</p>
+          <p class="muted">Use this to add or remove games, or to edit adapter specs (which the form does not expose). Catalog types also live in the form above.</p>
           <form class="form wide" method="post" action="/admin/manifest">
             ${field("Manifest JSON", `<textarea name="manifest" spellcheck="false" ${editorDisabled}>${escapeHtml(loaded.raw)}</textarea>`)}
             <div class="form-actions">
@@ -1354,6 +1415,16 @@ export async function registerAdmin(
         const prefix = body?.[`game[${i}].secretPrefix`];
         if (typeof prefix === "string" && /^[A-Z][A-Z0-9_]{1,47}$/.test(prefix)) {
           game.secretPrefix = prefix;
+        }
+        try {
+          const economy = applyEconomyFromForm(body ?? {}, i, game.economy);
+          if (economy.touched) {
+            if (economy.catalog) game.economy = economy.catalog;
+            else delete game.economy;
+          }
+        } catch (error) {
+          const message = error instanceof BantamError ? error.message : "Invalid economy catalog";
+          return renderManifestError(reply, nav, [message]);
         }
       }
       saveText = JSON.stringify(manifest, null, 2);

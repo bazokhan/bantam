@@ -91,7 +91,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0; }
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--accent-ink); font-family: var(--font-mono); font-weight: 700; font-size: 0.75rem;
 }
-.topbar nav { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-left: auto; }
+.topbar nav.primary { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-left: auto; }
 .topbar nav a {
   color: var(--muted); padding: 0.45rem 0.7rem; border-radius: var(--radius-sm); font-size: 0.9rem;
 }
@@ -101,6 +101,54 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0; }
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 .topbar .meta { font-size: 0.85rem; color: var(--muted); margin-left: auto; }
+.topbar details.nav-menu { display: none; margin-left: auto; }
+.topbar details.nav-menu > summary {
+  cursor: pointer; list-style: none; padding: 0.45rem 0.7rem; color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.topbar details.nav-menu > summary::-webkit-details-marker { display: none; }
+.topbar details.nav-menu nav {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  position: absolute; right: 1rem; margin-top: 0.35rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.4rem; min-width: 11rem; z-index: 20;
+}
+.topbar details.account {
+  margin-left: 0.25rem;
+}
+.topbar details.account > summary {
+  cursor: pointer; list-style: none; padding: 0.45rem 0.7rem; color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem;
+}
+.topbar details.account > summary::-webkit-details-marker { display: none; }
+.topbar details.account .body {
+  position: absolute; right: 1rem; margin-top: 0.35rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.6rem; z-index: 20;
+}
+.subnav {
+  display: flex; gap: 0.25rem; flex-wrap: wrap;
+  margin: 0 0 1rem; padding: 0.25rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.subnav a {
+  color: var(--muted); padding: 0.4rem 0.7rem; border-radius: var(--radius-sm); font-size: 0.88rem;
+}
+.subnav a:hover { color: var(--fg); background: var(--surface-2); text-decoration: none; }
+.subnav a.active { color: var(--fg-strong); background: var(--surface-2); }
+.inline-fields { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.4rem 0; }
+.inline-fields .field { flex: 1 1 8rem; margin: 0; }
+.inline-fields label { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.2rem; }
+fieldset.compact {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 0.75rem; margin: 0.5rem 0; background: var(--bg);
+}
+.economy-editor h4 { margin: 1rem 0 0.4rem; font-size: 0.88rem; color: var(--muted); }
+.economy-editor .hint { color: var(--muted); font-size: 0.82rem; margin: 0 0 0.5rem; }
+@media (max-width: 720px) {
+  .topbar nav.primary { display: none; }
+  .topbar details.nav-menu { display: block; }
+}
 
 /* ─── Page header ───────────────────────────────────────────────────────── */
 .page-head { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
@@ -301,6 +349,14 @@ export function shell(
         `<a href="${escapeHtml(item.href)}"${item.active ? ' class="active" aria-current="page"' : ""}>${escapeHtml(item.label)}</a>`,
     )
     .join("");
+  const account = `<details class="account">
+  <summary>Account</summary>
+  <div class="body">
+    <form method="post" action="/admin/logout">
+      <button type="submit" class="btn ghost small">Log out</button>
+    </form>
+  </div>
+</details>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -315,13 +371,36 @@ export function shell(
 <a href="#main" class="skip">Skip to content</a>
 <div class="topbar">
   <a href="/admin/" class="brand"><span class="mark">b</span> Bantam Admin</a>
-  <nav aria-label="Primary">${navHtml}</nav>
+  <nav class="primary" aria-label="Primary">${navHtml}</nav>
+  <details class="nav-menu">
+    <summary>Menu</summary>
+    <nav aria-label="Primary">${navHtml}</nav>
+  </details>
+  ${account}
 </div>
 <div class="shell">
   <main id="main">${body}</main>
 </div>
 </body>
 </html>`;
+}
+
+export function gameSubnav(gameId: string, active: "game" | "boards" | "players" | "flags" | "runs"): string {
+  const id = escapeHtml(gameId);
+  const items: { href: string; key: typeof active | "catalog"; label: string }[] = [
+    { href: `/admin/games/${id}`, key: "game", label: "Game" },
+    { href: `/admin/games/${id}/boards`, key: "boards", label: "Boards" },
+    { href: `/admin/games/${id}/players`, key: "players", label: "Players" },
+    { href: `/admin/games/${id}/flags`, key: "flags", label: "Flags" },
+    { href: `/admin/games/${id}/runs`, key: "runs", label: "Runs" },
+    { href: `/admin/games/${id}#catalog`, key: "catalog", label: "Catalog" },
+  ];
+  return `<nav class="subnav" aria-label="Game">${items
+    .map(
+      (item) =>
+        `<a href="${item.href}"${item.key === active ? ' class="active" aria-current="page"' : ""}>${item.label}</a>`,
+    )
+    .join("")}</nav>`;
 }
 
 export function publicShell(title: string, body: string): string {

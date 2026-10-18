@@ -40,7 +40,7 @@ Any `/admin/*` request without a valid cookie is redirected to `/admin/login?nex
 
 If the resolved path is read-only (e.g. a `:ro` mount in compose), the editor is disabled and the page shows a banner explaining how to switch to a writable path. Save fails with a clear error pointing at the read-only file.
 
-The form lets you change `environment`, plus `displayName`, `authProvider`, `gracePeriodHours`, and `secretPrefix` for each existing game. Adding or removing games requires the Advanced JSON path — the form intentionally cannot drop or duplicate a game.
+The form lets you change `environment`, plus `displayName`, `authProvider`, `gracePeriodHours`, `secretPrefix`, and the optional **economy catalog** (currencies, items, offers, rewards, IAP grants) for each existing game. Adding or removing games requires the Advanced JSON path — the form intentionally cannot drop or duplicate a game. Empty currency rows mean the catalog is omitted. Adapter specs stay read-only on the form.
 
 When `environment` is `production`, the `authProvider` select hides the `development` option, and a save that reaches the runtime with `production + development` is rejected by the same boot-rule guard the initial loader enforces. Save fails with a 500 and the on-disk manifest is rolled back to the prior version so a follow-up save can succeed without an already-bad manifest standing in the way.
 
@@ -80,29 +80,29 @@ Every write is gated by the admin session cookie, and each change is logged with
 
 ## Routes
 
-| Method | Path                                          | Purpose                                                                                                                     |
-| ------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/admin/`                                     | Overview: counts (games, players, runs today) and a one-line per-game summary.                                              |
-| GET    | `/admin/login`                                | Login form (or auto-redirects to `/admin/` if already authenticated).                                                       |
-| POST   | `/admin/login`                                | Submit credentials, issue session cookie.                                                                                   |
-| GET    | `/admin/register`                             | First-admin registration form. 404 once any admin exists.                                                                   |
-| POST   | `/admin/register`                             | Create inaugural admin. 404 once any admin exists.                                                                          |
-| POST   | `/admin/logout`                               | Revoke session, clear cookie, redirect to login.                                                                            |
-| GET    | `/admin/games`                                | Per-game table (id, display name, auth badge, adapter count, player count, db readiness).                                   |
-| GET    | `/admin/games/:id`                            | Auth/grace/secretPrefix, **required env keys** (present/missing only, never values), boards (every adapter), last run time. |
-| GET    | `/admin/games/:id/boards`                     | Boards list across every loaded adapter.                                                                                    |
-| GET    | `/admin/games/:id/boards/:boardId`            | Top 50 for that board (period = `all_time` or today UTC).                                                                   |
-| GET    | `/admin/games/:id/runs`                       | Last 20 runs (runId, adapterId, createdAt, payloadHash only).                                                               |
-| GET    | `/admin/games/:id/flags`                      | Feature flags list + create form.                                                                                           |
-| GET    | `/admin/games/:id/players`                    | Player table (truncated id, provider, created) + a confirm-POST delete form.                                                |
-| GET    | `/admin/games/:id/players/:playerId`          | Wallet, ledger, inventory, store purchases, IAP state (no tokens), and adjustment forms.                                    |
-| POST   | `/admin/games/:id/players/:playerId/currency` | Audited credit/debit (`admin_adjustment`).                                                                                  |
-| POST   | `/admin/games/:id/players/:playerId/item`     | Audited grant/remove of a catalog item.                                                                                     |
-| POST   | `/admin/games/:id/players/delete`             | Delete a single player; reuses the same `deletePlayer` path the public API exposes.                                         |
-| GET    | `/admin/adapters`                             | Loaded adapters + which games reference them.                                                                               |
-| GET    | `/admin/health`                               | Per-game db readiness, adapter coverage, env completeness, **read-only CORS origin list**.                                  |
-| GET    | `/admin/manifest`                             | Manifest editor (form + Advanced JSON).                                                                                     |
-| POST   | `/admin/manifest`                             | Save + reload runtimes; rolls back on reload failure.                                                                       |
+| Method | Path                                          | Purpose                                                                                                 |
+| ------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/`                                     | Overview: counts (games, players, runs today) and a one-line per-game summary.                          |
+| GET    | `/admin/login`                                | Login form (or auto-redirects to `/admin/` if already authenticated).                                   |
+| POST   | `/admin/login`                                | Submit credentials, issue session cookie.                                                               |
+| GET    | `/admin/register`                             | First-admin registration form. 404 once any admin exists.                                               |
+| POST   | `/admin/register`                             | Create inaugural admin. 404 once any admin exists.                                                      |
+| POST   | `/admin/logout`                               | Revoke session, clear cookie, redirect to login.                                                        |
+| GET    | `/admin/games`                                | Per-game table (id, display name, auth badge, adapter count, player count, db readiness).               |
+| GET    | `/admin/games/:id`                            | Auth/grace, env key presence (never values), boards, last run time, and a read-only economy catalog.    |
+| GET    | `/admin/games/:id/boards`                     | Boards list across every loaded adapter.                                                                |
+| GET    | `/admin/games/:id/boards/:boardId`            | Top 50 for that board (period = `all_time` or today UTC).                                               |
+| GET    | `/admin/games/:id/runs`                       | Last 20 runs (runId, adapterId, createdAt, payloadHash only).                                           |
+| GET    | `/admin/games/:id/flags`                      | Feature flags list + create form.                                                                       |
+| GET    | `/admin/games/:id/players`                    | Player table (truncated id, provider, created) + a confirm-POST delete form.                            |
+| GET    | `/admin/games/:id/players/:playerId`          | Wallet, ledger, inventory, store purchases, IAP state (no tokens), and catalog-backed adjustment forms. |
+| POST   | `/admin/games/:id/players/:playerId/currency` | Audited credit/debit (`admin_adjustment`) for a catalog currency.                                       |
+| POST   | `/admin/games/:id/players/:playerId/item`     | Audited grant/remove of a catalog item.                                                                 |
+| POST   | `/admin/games/:id/players/delete`             | Delete a single player; reuses the same `deletePlayer` path the public API exposes.                     |
+| GET    | `/admin/adapters`                             | Loaded adapters + which games reference them.                                                           |
+| GET    | `/admin/health`                               | Per-game db readiness, adapter coverage, env completeness, **read-only CORS origin list**.              |
+| GET    | `/admin/manifest`                             | Manifest editor (form + Advanced JSON).                                                                 |
+| POST   | `/admin/manifest`                             | Save + reload runtimes; rolls back on reload failure.                                                   |
 
 ## Trust
 
