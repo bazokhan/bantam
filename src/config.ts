@@ -257,7 +257,7 @@ export function loadConfig(
         .join("; ");
       throw new BantamError("invalid-config", `Invalid game manifest at ${manifestPath}: ${details}`, 500);
     }
-    manifest = parsed as { environment: LoadedConfig["environment"]; games: unknown[] };
+    manifest = parsed;
   } else {
     // No manifest on disk — boot with empty games so the admin UI can drive creation.
     process.stderr.write(

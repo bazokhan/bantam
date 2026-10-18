@@ -1377,7 +1377,7 @@ export async function registerAdmin(
           .join("; ");
         return renderManifestError(reply, nav, [`Invalid manifest: ${details}`]);
       }
-      manifest = parsed as ManifestFile;
+      manifest = parsed;
       const priorLoad = manifestStore.load();
       if (priorLoad.ok) priorManifest = JSON.parse(JSON.stringify(priorLoad.manifest)) as ManifestFile;
       saveText = manifestTextRaw;

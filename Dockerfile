@@ -24,7 +24,11 @@ RUN set -eux; \
     cd /tmp; grep "  ${asset}$" checksums.txt | sha256sum -c -; \
     tar -xzf "${asset}"; install -m 0755 litestream /usr/local/bin/litestream; \
     apt-get purge -y --auto-remove curl; \
-    rm -rf /tmp/* /var/lib/apt/lists/*
+    rm -rf /tmp/* /var/lib/apt/lists/*; \
+    # Runtime only needs `node` + litestream. Drop npm/corepack so scanners
+    # stop reporting their vendored undici/tar (not used in production).
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 COPY --from=build --chown=node:node /app/dist dist
 COPY --from=build --chown=node:node /app/node_modules node_modules
