@@ -599,6 +599,12 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "listPriceAmount": {
+                            "type": "integer"
+                          },
+                          "saleEndsAtMs": {
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -610,10 +616,87 @@
                           "remainingPurchases"
                         ]
                       }
+                    },
+                    "iapProducts": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "providerProductId": {
+                            "type": "string"
+                          },
+                          "grants": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "currency"
+                                      ]
+                                    },
+                                    "currencyId": {
+                                      "type": "string"
+                                    },
+                                    "amount": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "currencyId",
+                                    "amount"
+                                  ]
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "item"
+                                      ]
+                                    },
+                                    "itemId": {
+                                      "type": "string"
+                                    },
+                                    "quantity": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "itemId",
+                                    "quantity"
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          "saleEndsAtMs": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "providerProductId",
+                          "grants"
+                        ]
+                      }
                     }
                   },
                   "required": [
-                    "offers"
+                    "offers",
+                    "iapProducts"
                   ]
                 }
               }

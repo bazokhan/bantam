@@ -13,6 +13,17 @@ export type StoreOffer = {
   priceCurrencyId: string;
   priceAmount: number;
   remainingPurchases: number | null;
+  listPriceAmount?: number;
+  saleEndsAtMs?: number;
+};
+export type StoreIapGrant =
+  | { kind: "currency"; currencyId: string; amount: number }
+  | { kind: "item"; itemId: string; quantity: number };
+export type StoreIapProduct = {
+  id: string;
+  providerProductId: string;
+  grants: StoreIapGrant[];
+  saleEndsAtMs?: number;
 };
 export type PurchaseResult = {
   purchaseId: number;
@@ -248,7 +259,7 @@ export class BantamClient {
   async getInventory(): Promise<{ items: InventoryItem[] }> {
     return this.request("/economy/inventory");
   }
-  async getStore(): Promise<{ offers: StoreOffer[] }> {
+  async getStore(): Promise<{ offers: StoreOffer[]; iapProducts: StoreIapProduct[] }> {
     return this.request("/economy/store");
   }
   async purchaseItem(offerId: string, requestId: string): Promise<PurchaseResult> {

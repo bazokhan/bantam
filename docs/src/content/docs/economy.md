@@ -35,7 +35,9 @@ Item definitions, offers, claimable rewards, and IAP products are versioned per 
         "quantity": 3,
         "priceCurrencyId": "coins",
         "priceAmount": 50,
-        "active": true
+        "active": true,
+        "salePriceAmount": 35,
+        "saleEndsAtMs": 1893456000000
       }
     ],
     "rewards": [
@@ -84,7 +86,7 @@ Use semantics: a usable consumable decrements quantity by 1. A usable permanent 
 2. The client sends that token and the Play product id to `POST /economy/iap`.
 3. Bantam looks up the catalog product, then verifies the token with the Android Publisher API. The client product id is only a lookup key; grants come from the catalog after verification.
 4. A purchased consumable is fulfilled exactly once inside a SQLite transaction.
-5. Bantam acknowledges the token. If acknowledgment fails, fulfillment stands; the next submit of the same token retries acknowledgment.
+5. Bantam settles the token with Google Play: **consumable** products (currency grants by default, or `fulfillment: "consumable"`) call `purchases.products.consume` (consume implies acknowledge and allows repurchase). **Permanent** products call acknowledge only. If settle fails after grant, fulfillment stands; the next submit of the same token retries settle.
 
 Provider credentials are server-side only: `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` must contain a Google Play service-account JSON object (names only — never commit the value). Without it, IAP submit returns `503 iap-not-configured`.
 

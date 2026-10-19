@@ -104,11 +104,16 @@ class MemoryStorage {
 
 class FakeIapVerifier implements IapVerifier {
   acknowledgements = 0;
+  consumptions = 0;
   constructor(private readonly result: IapVerification) {}
   async verify(): Promise<IapVerification> {
     return this.result;
   }
   async acknowledge(): Promise<void> {
+    this.acknowledgements += 1;
+  }
+  async consume(): Promise<void> {
+    this.consumptions += 1;
     this.acknowledgements += 1;
   }
 }
@@ -161,6 +166,13 @@ describe("economy HTTP and SDK", () => {
             priceCurrencyId: "coins",
             priceAmount: 40,
             remainingPurchases: null,
+          },
+        ],
+        iapProducts: [
+          {
+            id: "coins_100",
+            providerProductId: "coins_100",
+            grants: [{ kind: "currency", currencyId: "coins", amount: 100 }],
           },
         ],
       });
@@ -292,6 +304,7 @@ describe("economy HTTP and SDK", () => {
         replayed: false,
         wallet: [{ currencyId: "coins", balance: 100 }],
       });
+      expect(verifier.consumptions).toBe(1);
       expect(verifier.acknowledgements).toBe(1);
       const replay = await app.inject({
         method: "POST",

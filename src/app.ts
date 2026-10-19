@@ -22,7 +22,12 @@ import {
   catalogItem,
   catalogOffer,
   catalogReward,
+  effectiveOfferPrice,
   googlePlayServiceAccountEnv,
+  iapFulfillment,
+  iapProductVisible,
+  offerVisible,
+  publicIapProducts,
   publicOffers,
 } from "./services/economy.js";
 import { resolveFlags } from "./services/feature-flags.js";
@@ -96,6 +101,24 @@ const InventoryResponse = Type.Object(
   },
   { additionalProperties: false },
 );
+const StoreGrant = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal("currency"),
+      currencyId: Type.String(),
+      amount: Type.Integer(),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("item"),
+      itemId: Type.String(),
+      quantity: Type.Integer(),
+    },
+    { additionalProperties: false },
+  ),
+]);
 const StoreResponse = Type.Object(
   {
     offers: Type.Array(
@@ -107,6 +130,19 @@ const StoreResponse = Type.Object(
           priceCurrencyId: Type.String(),
           priceAmount: Type.Integer(),
           remainingPurchases: Type.Union([Type.Integer(), Type.Null()]),
+          listPriceAmount: Type.Optional(Type.Integer()),
+          saleEndsAtMs: Type.Optional(Type.Integer()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    iapProducts: Type.Array(
+      Type.Object(
+        {
+          id: Type.String(),
+          providerProductId: Type.String(),
+          grants: Type.Array(StoreGrant),
+          saleEndsAtMs: Type.Optional(Type.Integer()),
         },
         { additionalProperties: false },
       ),
@@ -563,8 +599,12 @@ export async function buildApp(
     async (request) => {
       const run = runtime(request.params.gameId);
       const player = await playerId(request.headers.authorization, run.game);
-      run.db.takeRate(player, "read", 120, Date.now());
-      return { offers: publicOffers(run.game.economy, run.db.offerPurchaseCounts(player)) };
+      const now = Date.now();
+      run.db.takeRate(player, "read", 120, now);
+      return {
+        offers: publicOffers(run.game.economy, run.db.offerPurchaseCounts(player), now),
+        iapProducts: publicIapProducts(run.game.economy, now),
+      };
     },
   );
   app.post<{ Params: Static<typeof GameParams>; Body: Static<typeof PurchaseBody> }>(
@@ -573,10 +613,21 @@ export async function buildApp(
     async (request) => {
       const run = runtime(request.params.gameId);
       const player = await playerId(request.headers.authorization, run.game);
-      run.db.takeRate(player, "economy", 30, Date.now());
+      const now = Date.now();
+      run.db.takeRate(player, "economy", 30, now);
       const offer = catalogOffer(run.game.economy, request.body.offerId);
+      if (!offerVisible(offer, now))
+        throw new BantamError("offer-inactive", "Store offer is not available", 409);
       const item = catalogItem(run.game.economy, offer.itemId);
-      const result = run.db.purchaseOffer(player, offer, item, request.body.requestId, Date.now());
+      const priced = effectiveOfferPrice(offer, now);
+      const result = run.db.purchaseOffer(
+        player,
+        offer,
+        item,
+        request.body.requestId,
+        now,
+        priced.priceAmount,
+      );
       return {
         purchaseId: result.purchaseId,
         itemId: result.itemId,
@@ -629,6 +680,8 @@ export async function buildApp(
       const catalog = run.game.economy;
       if (!catalog) throw new BantamError("iap-product-not-found", "IAP product is not configured", 404);
       const product = catalogIapProduct(catalog, request.body.productId, provider);
+      const now = Date.now();
+      // Already-fulfilled tokens may replay outside the sale window (idempotent grant).
       const tokenHash = hashPurchaseToken(provider, request.body.purchaseToken);
       const existing = run.db.getIapPurchase(provider, tokenHash);
       const verifyInput = {
@@ -636,19 +689,21 @@ export async function buildApp(
         productId: product.providerProductId,
         purchaseToken: request.body.purchaseToken,
       };
+      const settleProvider = async (): Promise<void> => {
+        if (!run.iapVerifier)
+          throw new BantamError("iap-not-configured", "IAP verification is not configured", 503);
+        try {
+          if (iapFulfillment(product) === "consumable") await run.iapVerifier.consume(verifyInput);
+          else await run.iapVerifier.acknowledge(verifyInput);
+          run.db.markIapAcknowledged(provider, tokenHash, Date.now(), true);
+        } catch {
+          run.db.markIapAcknowledged(provider, tokenHash, Date.now(), false);
+        }
+      };
       if (existing?.fulfillmentState === "fulfilled") {
         if (existing.playerId !== player)
           throw new BantamError("iap-conflict", "Purchase token is already bound to another player", 409);
-        if (existing.acknowledgeState !== "acknowledged") {
-          if (!run.iapVerifier)
-            throw new BantamError("iap-not-configured", "IAP verification is not configured", 503);
-          try {
-            await run.iapVerifier.acknowledge(verifyInput);
-            run.db.markIapAcknowledged(provider, tokenHash, Date.now(), true);
-          } catch {
-            run.db.markIapAcknowledged(provider, tokenHash, Date.now(), false);
-          }
-        }
+        if (existing.acknowledgeState !== "acknowledged") await settleProvider();
         return {
           productId: product.id,
           fulfillmentState: "fulfilled",
@@ -659,6 +714,8 @@ export async function buildApp(
           replayed: true,
         };
       }
+      if (!iapProductVisible(product, now))
+        throw new BantamError("iap-product-not-found", "IAP product is not available", 404);
       if (!run.iapVerifier)
         throw new BantamError("iap-not-configured", "IAP verification is not configured", 503);
       const verified = await run.iapVerifier.verify(verifyInput);
@@ -673,7 +730,7 @@ export async function buildApp(
           purchaseTokenHash: tokenHash,
           orderId: verified.orderId,
           verificationState: "refunded",
-          now: Date.now(),
+          now,
         });
         throw new BantamError("iap-refunded", "Purchase was refunded or canceled", 409);
       }
@@ -683,14 +740,14 @@ export async function buildApp(
         catalog,
         purchaseTokenHash: tokenHash,
         orderId: verified.orderId,
-        now: Date.now(),
+        now,
       });
-      try {
-        if (!verified.acknowledged) await run.iapVerifier.acknowledge(verifyInput);
-        run.db.markIapAcknowledged(provider, tokenHash, Date.now(), true);
-      } catch {
-        run.db.markIapAcknowledged(provider, tokenHash, Date.now(), false);
-      }
+      const needsSettle =
+        iapFulfillment(product) === "consumable"
+          ? verified.consumptionState !== "consumed"
+          : !verified.acknowledged;
+      if (needsSettle) await settleProvider();
+      else run.db.markIapAcknowledged(provider, tokenHash, Date.now(), true);
       return {
         productId: product.id,
         fulfillmentState: result.purchase.fulfillmentState,

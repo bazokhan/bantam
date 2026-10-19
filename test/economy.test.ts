@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GameDatabase } from "../src/db/game-database.js";
 import { BantamError } from "../src/errors.js";
 import {
+  effectiveOfferPrice,
   parseEconomyCatalog,
+  publicIapProducts,
+  publicOffers,
   type EconomyCatalog,
   type EconomyItem,
   type EconomyOffer,
@@ -384,6 +387,67 @@ describe("economy catalog", () => {
     expect(parseEconomyCatalog(undefined, "/economy")).toBeUndefined();
     expect(parseEconomyCatalog(catalog, "/economy")).toMatchObject({ currencies: [{ id: "coins" }] });
   });
+
+  it("filters timed offers/IAP and exposes sale prices", () => {
+    const timed: EconomyCatalog = {
+      ...catalog,
+      offers: [
+        {
+          ...offer("life_pack"),
+          salePriceAmount: 25,
+          saleStartsAtMs: 1_000,
+          saleEndsAtMs: 2_000,
+        },
+        {
+          id: "future_pack",
+          itemId: "extra_life",
+          quantity: 1,
+          priceCurrencyId: "coins",
+          priceAmount: 10,
+          startsAtMs: 9_000,
+        },
+      ],
+      iapProducts: [
+        {
+          id: "coins_100",
+          provider: "google_play",
+          providerProductId: "coins_100",
+          packageName: "com.example.game",
+          grants: [{ kind: "currency", currencyId: "coins", amount: 100 }],
+          endsAtMs: 5_000,
+        },
+      ],
+    };
+    expect(parseEconomyCatalog(timed, "/economy")).toBeTruthy();
+    expect(() =>
+      parseEconomyCatalog(
+        {
+          ...timed,
+          offers: [{ ...offer("life_pack"), salePriceAmount: 50 }],
+        },
+        "/economy",
+      ),
+    ).toThrow("salePriceAmount");
+    const sale = effectiveOfferPrice(timed.offers[0]!, 1_500);
+    expect(sale).toEqual({ priceAmount: 25, listPriceAmount: 50, saleEndsAtMs: 2_000 });
+    expect(effectiveOfferPrice(timed.offers[0]!, 3_000)).toEqual({ priceAmount: 50 });
+    const listed = publicOffers(timed, new Map(), 1_500);
+    expect(listed).toEqual([
+      {
+        id: "life_pack",
+        itemId: "extra_life",
+        quantity: 3,
+        priceCurrencyId: "coins",
+        priceAmount: 25,
+        remainingPurchases: null,
+        listPriceAmount: 50,
+        saleEndsAtMs: 2_000,
+      },
+    ]);
+    expect(publicOffers(timed, new Map(), 9_500).map((row) => row.id)).toContain("future_pack");
+    expect(publicIapProducts(timed, 4_000)).toHaveLength(1);
+    expect(publicIapProducts(timed, 5_000)).toHaveLength(0);
+  });
 });
 
 describe("inventory and virtual shop", () => {
@@ -671,6 +735,7 @@ describe("google play IAP fulfillment", () => {
           return new Response(JSON.stringify({ access_token: "access", expires_in: 3600 }), { status: 200 });
         }
         if (String(url).includes(":acknowledge")) return new Response("{}", { status: 200 });
+        if (String(url).includes(":consume")) return new Response("{}", { status: 200 });
         return new Response(
           JSON.stringify({
             purchaseState: 0,
@@ -693,7 +758,13 @@ describe("google play IAP fulfillment", () => {
       productId: "coins_100",
       purchaseToken: "token",
     });
+    await verifier.consume({
+      packageName: "com.example.game",
+      productId: "coins_100",
+      purchaseToken: "token",
+    });
     expect(calls.some((call) => call.includes(":acknowledge"))).toBe(true);
+    expect(calls.some((call) => call.includes(":consume"))).toBe(true);
     expect(calls.some((call) => call.includes("oauth2"))).toBe(true);
   });
 });

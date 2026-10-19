@@ -11,6 +11,14 @@ description: Service, API, adapter, schema, and documentation versions.
 - Database migrations are monotonic and checksummed. They are not tied one-to-one to the service version.
 - Documentation snapshots must pass OpenAPI reconciliation for the release commit.
 
+## 0.3.1 - IAP consume and timed sales
+
+- IAP `packageName` accepts uppercase segments (real Play ids like `com.example.MyGame`).
+- Google Play consumable fulfillment calls `purchases.products.consume` after grant (implies acknowledge) so coin packs can be bought again. Permanent IAP still uses acknowledge.
+- Optional offer windows (`startsAtMs` / `endsAtMs`) and sale fields (`salePriceAmount`, `saleStartsAtMs`, `saleEndsAtMs`). Store returns effective `priceAmount` plus optional `listPriceAmount` / `saleEndsAtMs`. Purchases charge the same effective price.
+- Optional IAP `active` / window fields. `GET /economy/store` also returns visible `iapProducts` (ids and grants; USD still from Play Billing).
+- SDK `0.3.1`: `StoreOffer` optional sale fields; `getStore()` includes `iapProducts`.
+
 ## 0.3.0 - game economy
 
 Compatible API addition (minor). Additive migrations `004_economy.sql` and `005_economy_shop.sql`.

@@ -121,6 +121,11 @@ export function renderEconomyFields(
           ${field("Price amount", `<input type="number" name="${n}.priceAmount" value="${escapeHtml(String(row?.priceAmount ?? ""))}" min="1" step="1" ${disabled}>`)}
           ${field("Active", boolSelect(`${n}.active`, row?.active !== false, disabled))}
           ${field("Max per player", `<input type="number" name="${n}.maxPerPlayer" value="${escapeHtml(row?.maxPerPlayer == null ? "" : String(row.maxPerPlayer))}" min="1" step="1" ${disabled}>`)}
+          ${field("Starts at ms", `<input type="number" name="${n}.startsAtMs" value="${escapeHtml(row?.startsAtMs == null ? "" : String(row.startsAtMs))}" min="0" step="1" ${disabled}>`)}
+          ${field("Ends at ms", `<input type="number" name="${n}.endsAtMs" value="${escapeHtml(row?.endsAtMs == null ? "" : String(row.endsAtMs))}" min="0" step="1" ${disabled}>`)}
+          ${field("Sale price", `<input type="number" name="${n}.salePriceAmount" value="${escapeHtml(row?.salePriceAmount == null ? "" : String(row.salePriceAmount))}" min="1" step="1" ${disabled}>`)}
+          ${field("Sale starts ms", `<input type="number" name="${n}.saleStartsAtMs" value="${escapeHtml(row?.saleStartsAtMs == null ? "" : String(row.saleStartsAtMs))}" min="0" step="1" ${disabled}>`)}
+          ${field("Sale ends ms", `<input type="number" name="${n}.saleEndsAtMs" value="${escapeHtml(row?.saleEndsAtMs == null ? "" : String(row.saleEndsAtMs))}" min="0" step="1" ${disabled}>`)}
           <label class="checkbox-row"><input type="checkbox" name="${n}.remove" value="on" ${disabled}> remove</label>
         </fieldset>`;
       })
@@ -145,6 +150,17 @@ export function renderEconomyFields(
           ${field("Id", `<input type="text" name="${n}.id" value="${escapeHtml(row?.id ?? "")}" maxlength="48" ${disabled}>`)}
           ${field("Play product id", `<input type="text" name="${n}.providerProductId" value="${escapeHtml(row?.providerProductId ?? "")}" maxlength="128" ${disabled}>`)}
           ${field("Package name", `<input type="text" name="${n}.packageName" value="${escapeHtml(row?.packageName ?? "")}" maxlength="255" ${disabled}>`)}
+          ${field("Active", boolSelect(`${n}.active`, row?.active !== false, disabled))}
+          ${field("Starts at ms", `<input type="number" name="${n}.startsAtMs" value="${escapeHtml(row?.startsAtMs == null ? "" : String(row.startsAtMs))}" min="0" step="1" ${disabled}>`)}
+          ${field("Ends at ms", `<input type="number" name="${n}.endsAtMs" value="${escapeHtml(row?.endsAtMs == null ? "" : String(row.endsAtMs))}" min="0" step="1" ${disabled}>`)}
+          ${field(
+            "Fulfillment",
+            `<select name="${n}.fulfillment" ${disabled}>
+              <option value=""${row?.fulfillment ? "" : " selected"}>(auto)</option>
+              <option value="consumable"${row?.fulfillment === "consumable" ? " selected" : ""}>consumable</option>
+              <option value="permanent"${row?.fulfillment === "permanent" ? " selected" : ""}>permanent</option>
+            </select>`,
+          )}
           <div class="field"><label>Grants</label>${grantRows(n, row?.grants ?? [], disabled)}</div>
           <label class="checkbox-row"><input type="checkbox" name="${n}.remove" value="on" ${disabled}> remove</label>
         </fieldset>`;
@@ -189,6 +205,11 @@ export function applyEconomyFromForm(
     const priceCurrencyId = str(body, `${p}.offer[${i}].priceCurrencyId`);
     const priceAmount = intOrEmpty(str(body, `${p}.offer[${i}].priceAmount`));
     const maxPerPlayer = intOrEmpty(str(body, `${p}.offer[${i}].maxPerPlayer`));
+    const startsAtMs = intOrEmpty(str(body, `${p}.offer[${i}].startsAtMs`));
+    const endsAtMs = intOrEmpty(str(body, `${p}.offer[${i}].endsAtMs`));
+    const salePriceAmount = intOrEmpty(str(body, `${p}.offer[${i}].salePriceAmount`));
+    const saleStartsAtMs = intOrEmpty(str(body, `${p}.offer[${i}].saleStartsAtMs`));
+    const saleEndsAtMs = intOrEmpty(str(body, `${p}.offer[${i}].saleEndsAtMs`));
     const active = str(body, `${p}.offer[${i}].active`) !== "false";
     offers.push({
       id,
@@ -198,6 +219,11 @@ export function applyEconomyFromForm(
       priceAmount: priceAmount ?? 0,
       ...(active ? {} : { active: false }),
       ...(maxPerPlayer !== undefined ? { maxPerPlayer } : {}),
+      ...(startsAtMs !== undefined ? { startsAtMs } : {}),
+      ...(endsAtMs !== undefined ? { endsAtMs } : {}),
+      ...(salePriceAmount !== undefined ? { salePriceAmount } : {}),
+      ...(saleStartsAtMs !== undefined ? { saleStartsAtMs } : {}),
+      ...(saleEndsAtMs !== undefined ? { saleEndsAtMs } : {}),
     });
   }
 
@@ -219,12 +245,22 @@ export function applyEconomyFromForm(
     const id = str(body, `${p}.iap[${i}].id`);
     if (!id) continue;
     if (str(body, `${p}.iap[${i}].remove`) === "on") continue;
+    const startsAtMs = intOrEmpty(str(body, `${p}.iap[${i}].startsAtMs`));
+    const endsAtMs = intOrEmpty(str(body, `${p}.iap[${i}].endsAtMs`));
+    const fulfillmentRaw = str(body, `${p}.iap[${i}].fulfillment`);
+    const fulfillment =
+      fulfillmentRaw === "consumable" || fulfillmentRaw === "permanent" ? fulfillmentRaw : undefined;
+    const active = str(body, `${p}.iap[${i}].active`) !== "false";
     iapProducts.push({
       id,
       provider: "google_play",
       providerProductId: str(body, `${p}.iap[${i}].providerProductId`),
       packageName: str(body, `${p}.iap[${i}].packageName`),
       grants: parseGrants(body, `${p}.iap[${i}]`),
+      ...(active ? {} : { active: false }),
+      ...(startsAtMs !== undefined ? { startsAtMs } : {}),
+      ...(endsAtMs !== undefined ? { endsAtMs } : {}),
+      ...(fulfillment ? { fulfillment } : {}),
     });
   }
 

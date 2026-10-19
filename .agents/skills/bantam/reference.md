@@ -126,20 +126,20 @@ Public npm: `npm install @gamercury/bantam-sdk`. Source: `packages/sdk`. Do not 
 
 ## Env names only
 
-| Name                                               | Purpose                                                          |
-| -------------------------------------------------- | ---------------------------------------------------------------- |
-| `${secretPrefix}_IDENTITY_SALT`                    | HMAC player pseudonyms                                           |
-| `${secretPrefix}_SESSION_SECRET`                   | Access tokens                                                    |
-| `${secretPrefix}_CURSOR_SECRET`                    | Leaderboard cursors                                              |
-| `${secretPrefix}_PGS_CLIENT_ID`                    | Required if `pgs-v2`                                             |
-| `${secretPrefix}_PGS_CLIENT_SECRET`                | Required if `pgs-v2`                                             |
-| `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Service-account JSON if the catalog has Google Play IAP products |
-| `BANTAM_ADAPTERS_DIR`                              | Default `/bantam/adapters`                                       |
-| `BANTAM_DATA_DIR`                                  | Default `/data`                                                  |
-| `BANTAM_CONFIG_FILE`                               | Optional manifest mount                                          |
-| `BANTAM_ALLOWED_ORIGINS`                           | CORS allow list                                                  |
-| `BANTAM_ONLY_GAME`                                 | Load a single game id                                            |
-| `BANTAM_METRICS_TOKEN`                             | Optional metrics gate                                            |
-| `PORT`                                             | Default 3000                                                     |
+| Name                                               | Purpose                                                                             |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `${secretPrefix}_IDENTITY_SALT`                    | HMAC player pseudonyms                                                              |
+| `${secretPrefix}_SESSION_SECRET`                   | Access tokens                                                                       |
+| `${secretPrefix}_CURSOR_SECRET`                    | Leaderboard cursors                                                                 |
+| `${secretPrefix}_PGS_CLIENT_ID`                    | Required if `pgs-v2`                                                                |
+| `${secretPrefix}_PGS_CLIENT_SECRET`                | Required if `pgs-v2`                                                                |
+| `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Service-account JSON if the catalog has Google Play IAP products (verify + consume) |
+| `BANTAM_ADAPTERS_DIR`                              | Default `/bantam/adapters`                                                          |
+| `BANTAM_DATA_DIR`                                  | Default `/data`                                                                     |
+| `BANTAM_CONFIG_FILE`                               | Optional manifest mount                                                             |
+| `BANTAM_ALLOWED_ORIGINS`                           | CORS allow list                                                                     |
+| `BANTAM_ONLY_GAME`                                 | Load a single game id                                                               |
+| `BANTAM_METRICS_TOKEN`                             | Optional metrics gate                                                               |
+| `PORT`                                             | Default 3000                                                                        |
 
 Never paste values. Operator admin path: `deploy/the deployment secret store`.

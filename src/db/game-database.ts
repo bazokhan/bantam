@@ -664,10 +664,13 @@ export class GameDatabase {
     item: EconomyItem,
     requestId: string,
     now: number,
+    priceAmount: number = offer.priceAmount,
   ): StorePurchaseResult {
     if (offer.active === false) throw new BantamError("offer-inactive", "Store offer is not available", 409);
     if (offer.itemId !== item.id)
       throw new BantamError("offer-item-mismatch", "Offer item does not match the catalog item", 500);
+    if (!Number.isInteger(priceAmount) || priceAmount < 1)
+      throw new BantamError("offer-inactive", "Store offer price is invalid", 500);
     return this.db
       .transaction((): StorePurchaseResult => {
         const previous = this.db
@@ -722,7 +725,7 @@ export class GameDatabase {
         const wallet = this.debitCurrency(
           playerId,
           offer.priceCurrencyId,
-          offer.priceAmount,
+          priceAmount,
           "item_purchase",
           requestId,
           now,
@@ -748,7 +751,7 @@ export class GameDatabase {
             item.id,
             offer.quantity,
             offer.priceCurrencyId,
-            offer.priceAmount,
+            priceAmount,
             requestId,
             wallet.transactionId,
             now,

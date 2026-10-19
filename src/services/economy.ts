@@ -4,9 +4,11 @@ import { BantamError } from "../errors.js";
 
 export const ECONOMY_ID_PATTERN = /^[a-z][a-z0-9_-]{0,47}$/;
 export const PROVIDER_PRODUCT_ID_PATTERN = /^[A-Za-z0-9._~-]{1,128}$/;
-export const PACKAGE_NAME_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
+/** Android applicationId segments may include uppercase (e.g. MyGame). */
+export const PACKAGE_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/;
 
 const EconomyId = Type.String({ pattern: "^[a-z][a-z0-9_-]{0,47}$" });
+const OptionalEpochMs = Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }));
 
 export const CurrencyGrantSchema = Type.Object(
   {
@@ -45,6 +47,11 @@ export const EconomyOfferSchema = Type.Object(
     priceAmount: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     active: Type.Optional(Type.Boolean()),
     maxPerPlayer: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })),
+    startsAtMs: OptionalEpochMs,
+    endsAtMs: OptionalEpochMs,
+    salePriceAmount: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+    saleStartsAtMs: OptionalEpochMs,
+    saleEndsAtMs: OptionalEpochMs,
   },
   { additionalProperties: false },
 );
@@ -62,10 +69,14 @@ export const EconomyIapProductSchema = Type.Object(
     provider: Type.Literal("google_play"),
     providerProductId: Type.String({ pattern: "^[A-Za-z0-9._~-]{1,128}$" }),
     packageName: Type.String({
-      pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      pattern: "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$",
       maxLength: 255,
     }),
     grants: Type.Array(EconomyGrantSchema, { minItems: 1, maxItems: 16 }),
+    active: Type.Optional(Type.Boolean()),
+    startsAtMs: OptionalEpochMs,
+    endsAtMs: OptionalEpochMs,
+    fulfillment: Type.Optional(Type.Union([Type.Literal("consumable"), Type.Literal("permanent")])),
   },
   { additionalProperties: false },
 );
@@ -97,6 +108,15 @@ export type PublicStoreOffer = {
   priceCurrencyId: string;
   priceAmount: number;
   remainingPurchases: number | null;
+  listPriceAmount?: number;
+  saleEndsAtMs?: number;
+};
+
+export type PublicStoreIapProduct = {
+  id: string;
+  providerProductId: string;
+  grants: EconomyGrant[];
+  saleEndsAtMs?: number;
 };
 
 function uniqueIds(kind: string, ids: string[], path: string): void {
@@ -119,6 +139,55 @@ function validateGrants(
     if (grant.kind === "currency") requireKnown("currency", grant.currencyId, currencies, grantPath);
     else requireKnown("item", grant.itemId, items, grantPath);
   }
+}
+
+function validateWindow(startsAtMs: number | undefined, endsAtMs: number | undefined, path: string): void {
+  if (startsAtMs !== undefined && endsAtMs !== undefined && startsAtMs >= endsAtMs)
+    throw new BantamError("invalid-config", `${path}: startsAtMs must be before endsAtMs`, 400);
+}
+
+export function inTimeWindow(
+  nowMs: number,
+  startsAtMs: number | undefined,
+  endsAtMs: number | undefined,
+): boolean {
+  if (startsAtMs !== undefined && nowMs < startsAtMs) return false;
+  if (endsAtMs !== undefined && nowMs >= endsAtMs) return false;
+  return true;
+}
+
+export function offerVisible(offer: EconomyOffer, nowMs: number): boolean {
+  if (offer.active === false) return false;
+  return inTimeWindow(nowMs, offer.startsAtMs, offer.endsAtMs);
+}
+
+export function iapProductVisible(product: EconomyIapProduct, nowMs: number): boolean {
+  if (product.active === false) return false;
+  return inTimeWindow(nowMs, product.startsAtMs, product.endsAtMs);
+}
+
+/** Effective virtual price charged for an offer at nowMs. */
+export function effectiveOfferPrice(
+  offer: EconomyOffer,
+  nowMs: number,
+): {
+  priceAmount: number;
+  listPriceAmount?: number;
+  saleEndsAtMs?: number;
+} {
+  const onSale =
+    offer.salePriceAmount !== undefined && inTimeWindow(nowMs, offer.saleStartsAtMs, offer.saleEndsAtMs);
+  if (!onSale) return { priceAmount: offer.priceAmount };
+  return {
+    priceAmount: offer.salePriceAmount!,
+    listPriceAmount: offer.priceAmount,
+    ...(offer.saleEndsAtMs !== undefined ? { saleEndsAtMs: offer.saleEndsAtMs } : {}),
+  };
+}
+
+export function iapFulfillment(product: EconomyIapProduct): "consumable" | "permanent" {
+  if (product.fulfillment) return product.fulfillment;
+  return product.grants.every((grant) => grant.kind === "currency") ? "consumable" : "permanent";
 }
 
 export function parseEconomyCatalog(value: unknown, path: string): EconomyCatalog | undefined {
@@ -183,12 +252,21 @@ export function parseEconomyCatalog(value: unknown, path: string): EconomyCatalo
         `${path}/offers/${offer.id}: permanent items must be sold as quantity 1`,
         400,
       );
+    validateWindow(offer.startsAtMs, offer.endsAtMs, `${path}/offers/${offer.id}`);
+    validateWindow(offer.saleStartsAtMs, offer.saleEndsAtMs, `${path}/offers/${offer.id}/sale`);
+    if (offer.salePriceAmount !== undefined && offer.salePriceAmount >= offer.priceAmount)
+      throw new BantamError(
+        "invalid-config",
+        `${path}/offers/${offer.id}: salePriceAmount must be less than priceAmount`,
+        400,
+      );
   }
   for (const reward of catalog.rewards ?? []) {
     validateGrants(reward.grants, currencies, items, `${path}/rewards/${reward.id}`);
   }
   for (const product of catalog.iapProducts ?? []) {
     validateGrants(product.grants, currencies, items, `${path}/iapProducts/${product.id}`);
+    validateWindow(product.startsAtMs, product.endsAtMs, `${path}/iapProducts/${product.id}`);
   }
   return catalog;
 }
@@ -232,21 +310,40 @@ export function catalogIapProduct(
 export function publicOffers(
   catalog: EconomyCatalog | undefined,
   purchasedByOffer: Map<string, number>,
+  nowMs = Date.now(),
 ): PublicStoreOffer[] {
   if (!catalog) return [];
   return catalog.offers
-    .filter((offer) => offer.active !== false)
+    .filter((offer) => offerVisible(offer, nowMs))
     .map((offer) => {
       const used = purchasedByOffer.get(offer.id) ?? 0;
+      const priced = effectiveOfferPrice(offer, nowMs);
       return {
         id: offer.id,
         itemId: offer.itemId,
         quantity: offer.quantity,
         priceCurrencyId: offer.priceCurrencyId,
-        priceAmount: offer.priceAmount,
+        priceAmount: priced.priceAmount,
         remainingPurchases: offer.maxPerPlayer === undefined ? null : Math.max(0, offer.maxPerPlayer - used),
+        ...(priced.listPriceAmount !== undefined ? { listPriceAmount: priced.listPriceAmount } : {}),
+        ...(priced.saleEndsAtMs !== undefined ? { saleEndsAtMs: priced.saleEndsAtMs } : {}),
       };
     });
+}
+
+export function publicIapProducts(
+  catalog: EconomyCatalog | undefined,
+  nowMs = Date.now(),
+): PublicStoreIapProduct[] {
+  if (!catalog?.iapProducts) return [];
+  return catalog.iapProducts
+    .filter((product) => iapProductVisible(product, nowMs))
+    .map((product) => ({
+      id: product.id,
+      providerProductId: product.providerProductId,
+      grants: product.grants,
+      ...(product.endsAtMs !== undefined ? { saleEndsAtMs: product.endsAtMs } : {}),
+    }));
 }
 
 export function isUsable(item: EconomyItem): boolean {

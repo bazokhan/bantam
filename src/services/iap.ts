@@ -22,6 +22,8 @@ export type IapVerifyInput = {
 export interface IapVerifier {
   verify(input: IapVerifyInput): Promise<IapVerification>;
   acknowledge(input: IapVerifyInput): Promise<void>;
+  /** Consume implies acknowledge and allows repurchase of consumable SKUs. */
+  consume(input: IapVerifyInput): Promise<void>;
 }
 
 export type GooglePlayServiceAccount = {
@@ -111,6 +113,22 @@ export class GooglePlayIapVerifier implements IapVerifier {
       if (body.error?.message?.toLowerCase().includes("already")) return;
     }
     if (!response.ok) throw new BantamError("iap-acknowledge-failed", "IAP acknowledgment failed", 503);
+  }
+
+  async consume(input: IapVerifyInput): Promise<void> {
+    const token = await this.access();
+    const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodePath(input.packageName)}/purchases/products/${encodePath(input.productId)}/tokens/${encodePath(input.purchaseToken)}:consume`;
+    const response = await this.fetchFn(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: "{}",
+    });
+    if (response.status === 400) {
+      const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+      const message = body.error?.message?.toLowerCase() ?? "";
+      if (message.includes("already") || message.includes("consumed")) return;
+    }
+    if (!response.ok) throw new BantamError("iap-consume-failed", "IAP consumption failed", 503);
   }
 
   private async access(): Promise<string> {

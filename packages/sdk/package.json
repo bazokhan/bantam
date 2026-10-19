@@ -1,6 +1,6 @@
 {
   "name": "@gamercury/bantam-sdk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Browser TypeScript client for Bantam — leaderboards, feature flags, and economy (BantamClient).",
   "license": "MIT",
   "type": "module",
