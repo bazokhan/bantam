@@ -308,7 +308,7 @@ export async function buildApp(
       info: {
         title: "Bantam Game Services",
         description: "Small footprint. Authoritative results.",
-        version: "0.3.0",
+        version: "0.3.1",
       },
       tags: [
         { name: "system" },
@@ -421,7 +421,7 @@ export async function buildApp(
   });
   app.get("/version", { schema: { tags: ["system"] } }, async () => ({
     name: "Bantam Game Services",
-    version: "0.3.0",
+    version: "0.3.1",
     commit: process.env.BANTAM_GIT_SHA ?? "local",
     builtAt: process.env.BANTAM_BUILT_AT ?? "unknown",
     adapters: listLoadedAdapters().map(({ id, version }) => ({ id, version })),
