@@ -95,6 +95,11 @@ export type RewardClaimResult = {
   inventory: InventoryItem[];
   replayed: boolean;
 };
+export type RewardClaimRow = {
+  rewardId: string;
+  claims: number;
+  createdAt: number;
+};
 export type IapPurchaseRow = {
   id: number;
   playerId: string;
@@ -1057,6 +1062,17 @@ export class GameDatabase {
         .pluck()
         .get(playerId, rewardId) as number) ?? 0
     );
+  }
+
+  // Every reward this player has claimed, with how many times. Used by the
+  // admin console to show claim usage against each reward's limit.
+  rewardClaims(playerId: string): RewardClaimRow[] {
+    return this.db
+      .prepare(
+        `SELECT reward_id rewardId, count(*) claims, max(created_at) createdAt
+         FROM reward_claims WHERE player_id=? GROUP BY reward_id ORDER BY reward_id`,
+      )
+      .all(playerId) as RewardClaimRow[];
   }
 
   claimReward(

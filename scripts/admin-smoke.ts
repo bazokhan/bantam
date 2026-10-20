@@ -134,6 +134,7 @@ try {
     "/admin/api/games/echo-demo/players",
     "/admin/api/health",
     "/admin/api/adapters",
+    "/admin/api/adapters/echo-v1/source",
     "/admin/api/manifest",
     "/admin/api/audit",
   ];

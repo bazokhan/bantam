@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   Boxes,
   Braces,
   ChevronDown,
+  Coins,
+  CreditCard,
   Gamepad2,
   Gauge,
-  LayoutList,
+  Gift,
   LogOut,
   Menu,
   Moon,
+  Package,
   Plug,
   ScrollText,
   Search,
   Settings,
+  ShoppingCart,
   Sun,
   Trophy,
   Users,
@@ -45,22 +49,49 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { GameSummary } from "@/lib/types";
 
-const NAV = [
-  { to: "/", label: "Overview", icon: Gauge },
-  { to: "/games", label: "Games", icon: Gamepad2 },
+// Links that belong to the game the operator is working in. They lead the
+// sidebar, the way an app-scoped console leads with the app's own surfaces.
+const GAME_NAV = [
+  { to: "/games/$gameId", suffix: "", label: "Overview", icon: Gauge },
+  { to: "/games/$gameId/boards", suffix: "/boards", label: "Leaderboards", icon: Trophy },
+  { to: "/games/$gameId/players", suffix: "/players", label: "Players", icon: Users },
+  { to: "/games/$gameId/runs", suffix: "/runs", label: "Runs", icon: Activity },
+  { to: "/games/$gameId/flags", suffix: "/flags", label: "Feature flags", icon: Boxes },
+  {
+    to: "/games/$gameId/economy/currencies",
+    suffix: "/economy/currencies",
+    label: "Currencies",
+    icon: Coins,
+  },
+  { to: "/games/$gameId/economy/items", suffix: "/economy/items", label: "Items", icon: Package },
+  {
+    to: "/games/$gameId/economy/offers",
+    suffix: "/economy/offers",
+    label: "Offers",
+    icon: ShoppingCart,
+  },
+  {
+    to: "/games/$gameId/economy/rewards",
+    suffix: "/economy/rewards",
+    label: "Rewards",
+    icon: Gift,
+  },
+  {
+    to: "/games/$gameId/economy/iap",
+    suffix: "/economy/iap",
+    label: "IAP products",
+    icon: CreditCard,
+  },
+] as const;
+
+// Links that belong to the deployment rather than to one game.
+const PLATFORM_NAV = [
+  { to: "/", label: "Dashboard", icon: Gauge },
+  { to: "/games", label: "All games", icon: Gamepad2 },
   { to: "/adapters", label: "Adapters", icon: Plug },
   { to: "/health", label: "Health", icon: Activity },
   { to: "/audit", label: "Audit", icon: ScrollText },
   { to: "/settings", label: "Settings", icon: Settings },
-] as const;
-
-const GAME_TABS = [
-  { to: "/games/$gameId", suffix: "", label: "Overview", icon: Gauge },
-  { to: "/games/$gameId/boards", suffix: "boards", label: "Leaderboards", icon: Trophy },
-  { to: "/games/$gameId/players", suffix: "players", label: "Players", icon: Users },
-  { to: "/games/$gameId/runs", suffix: "runs", label: "Runs", icon: Activity },
-  { to: "/games/$gameId/flags", suffix: "flags", label: "Feature Flags", icon: Boxes },
-  { to: "/games/$gameId/economy", suffix: "economy", label: "Economy", icon: LayoutList },
 ] as const;
 
 export interface AdminUser {
@@ -110,21 +141,34 @@ export function DashboardShell({
 
   const closeDrawer = () => setMobileOpen(false);
 
+  // The route is the source of truth for which game is in context, so a deep
+  // link into a game shows that game in the switcher and lights up its links.
+  // The stored selection is only the fallback for pages without a game.
+  const routeParams = useParams({ strict: false });
+  const routeGameId = routeParams.gameId ?? null;
+  const gameId = routeGameId ?? selectedGameId;
+
+  useEffect(() => {
+    if (routeGameId && routeGameId !== selectedGameId) onSelectGame(routeGameId);
+  }, [routeGameId, selectedGameId, onSelectGame]);
+
   const selectedGame = useMemo(
-    () => games.find((game) => game.id === selectedGameId) ?? null,
-    [games, selectedGameId],
+    () => games.find((game) => game.id === gameId) ?? null,
+    [games, gameId],
   );
 
-  const gameId = selectedGameId;
-
-  const navItems = NAV.map((item) => ({
+  const platformItems = PLATFORM_NAV.map((item) => ({
     ...item,
-    active: item.to === "/" ? pathname === "/" : pathname.startsWith(item.to),
+    active: item.to === "/" ? pathname === "/" : pathname === item.to,
   }));
 
-  const gameTabs = GAME_TABS.map((tab) => ({
-    ...tab,
-    active: gameId ? pathname === `/games/${gameId}${tab.suffix}` : false,
+  const gameItems = GAME_NAV.map((item) => ({
+    ...item,
+    active: gameId
+      ? pathname === `/games/${gameId}${item.suffix}` ||
+        // the economy index renders the currencies table, so it lights up there too
+        (item.suffix === "/economy/currencies" && pathname === `/games/${gameId}/economy`)
+      : false,
   }));
 
   const openGame = (id: string | null) => {
@@ -171,7 +215,7 @@ export function DashboardShell({
                       {selectedGame ? selectedGame.id.slice(0, 2).toUpperCase() : "--"}
                     </span>
                     <span className="truncate text-sm">
-                      {selectedGame ? selectedGame.displayName : "All games"}
+                      {selectedGame ? selectedGame.displayName : "Select a game"}
                     </span>
                   </div>
                   <ChevronDown className="size-4 shrink-0 opacity-60" />
@@ -179,7 +223,9 @@ export function DashboardShell({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuLabel>Game</DropdownMenuLabel>
-                <DropdownMenuItem onSelect={() => openGame(null)}>All games</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => openGame(null)}>
+                  No game selected
+                </DropdownMenuItem>
                 {games.length === 0 ? (
                   <DropdownMenuItem disabled>No games loaded</DropdownMenuItem>
                 ) : null}
@@ -196,55 +242,55 @@ export function DashboardShell({
           </div>
 
           <nav className="flex-1 overflow-y-auto p-2" aria-label="Primary">
-            {navItems.map((item) => (
+            {gameId ? (
+              gameItems.map((item) => (
+                <Link
+                  key={item.suffix || "overview"}
+                  to={item.to}
+                  params={{ gameId }}
+                  onClick={closeDrawer}
+                  className={cn(
+                    "mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+                    item.active
+                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+                  )}
+                >
+                  <item.icon className="size-4 shrink-0" />
+                  {item.label}
+                </Link>
+              ))
+            ) : (
               <Link
-                key={item.to}
-                to={item.to}
+                to="/games"
                 onClick={closeDrawer}
-                className={cn(
-                  "mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
-                  item.active
-                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-                )}
+                className="mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
               >
-                <item.icon className="size-4 shrink-0" />
-                {item.label}
+                <Gamepad2 className="size-4 shrink-0" />
+                Pick a game
               </Link>
-            ))}
+            )}
 
             <div className="mt-5 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {selectedGame ? selectedGame.displayName : "Select a game"}
+              Deployment
             </div>
             <div className="mt-1">
-              {gameId ? (
-                gameTabs.map((tab) => (
-                  <Link
-                    key={tab.suffix}
-                    to={tab.to}
-                    params={{ gameId }}
-                    onClick={closeDrawer}
-                    className={cn(
-                      "mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
-                      tab.active
-                        ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                        : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-                    )}
-                  >
-                    <tab.icon className="size-4 shrink-0" />
-                    {tab.label}
-                  </Link>
-                ))
-              ) : (
+              {platformItems.map((item) => (
                 <Link
-                  to="/games"
+                  key={item.to}
+                  to={item.to}
                   onClick={closeDrawer}
-                  className="mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+                  className={cn(
+                    "mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+                    item.active
+                      ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+                  )}
                 >
-                  <Gamepad2 className="size-4 shrink-0" />
-                  Pick a game
+                  <item.icon className="size-4 shrink-0" />
+                  {item.label}
                 </Link>
-              )}
+              ))}
             </div>
           </nav>
 
@@ -345,8 +391,8 @@ export function DashboardShell({
           <CommandInput placeholder="Jump to a page or game…" />
           <CommandList>
             <CommandEmpty>No results.</CommandEmpty>
-            <CommandGroup heading="Pages">
-              {navItems.map((item) => (
+            <CommandGroup heading="Deployment">
+              {platformItems.map((item) => (
                 <CommandItem
                   key={item.to}
                   value={`page ${item.label}`}
@@ -362,18 +408,17 @@ export function DashboardShell({
             </CommandGroup>
             {selectedGame ? (
               <CommandGroup heading={selectedGame.displayName}>
-                {gameTabs.map((tab) => (
+                {gameItems.map((item) => (
                   <CommandItem
-                    key={tab.suffix}
-                    value={`tab ${tab.label}`}
+                    key={item.suffix || "overview"}
+                    value={`tab ${item.label}`}
                     onSelect={() => {
-                      if (selectedGameId)
-                        void navigate({ to: tab.to, params: { gameId: selectedGameId } });
+                      if (gameId) void navigate({ to: item.to, params: { gameId } });
                       setPaletteOpen(false);
                     }}
                   >
-                    <tab.icon className="size-4" />
-                    {tab.label}
+                    <item.icon className="size-4" />
+                    {item.label}
                   </CommandItem>
                 ))}
               </CommandGroup>

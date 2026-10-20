@@ -1,15 +1,28 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { listLoadedAdapters } from "../adapters/registry.js";
+import {
+  listAdapterFiles,
+  listAdapterGames,
+  listAdapterOrigins,
+  listLoadedAdapters,
+} from "../adapters/registry.js";
 import type { Runtime } from "../app.js";
 import { ADMIN_COOKIE_NAME, revokeSession } from "../auth/admin.js";
 import type { AdminDatabase } from "../db/admin-database.js";
 import { BantamError } from "../errors.js";
 import { ManifestSchema } from "../config.js";
-import { catalogCurrency, catalogItem } from "../services/economy.js";
+import {
+  catalogCurrency,
+  catalogItem,
+  catalogReward,
+  parseEconomyCatalog,
+  type EconomyCatalog,
+  type EconomyGrant,
+} from "../services/economy.js";
 import {
   FLAG_DESCRIPTION_MAX,
   FLAG_VALUE_MAX,
@@ -18,15 +31,19 @@ import {
 } from "../services/feature-flags.js";
 import type { BoardDefinition, FeatureFlag } from "../types.js";
 import {
+  AdapterSourceSchema,
   AdaptersResponseSchema,
   AuditResponseSchema,
   BoardEntriesResponseSchema,
+  EconomyCatalogWriteBodySchema,
   EconomyResponseSchema,
   EmptyBodySchema,
   FeatureFlagRowSchema,
   FlagWriteBodySchema,
   FlagsResponseSchema,
   GameDetailSchema,
+  GameSettingsResponseSchema,
+  GameSettingsWriteBodySchema,
   GameSummarySchema,
   HealthResponseSchema,
   InventoryItemSchema,
@@ -36,6 +53,8 @@ import {
   PlayerDetailSchema,
   PlayerEntriesResponseSchema,
   PlayersResponseSchema,
+  RewardClaimBodySchema,
+  RewardClaimResponseSchema,
   RunsResponseSchema,
   SessionResponseSchema,
   WalletBalanceSchema,
@@ -45,6 +64,20 @@ import { clearCookieValue, cookieSecureFor } from "./middleware.js";
 import type { ManifestFile, ManifestStore } from "./manifest-store.js";
 
 export type ReloadRuntimes = (manifest: ManifestFile) => Promise<{ added: string[]; removed: string[] }>;
+
+// The manifest's game entry as the admin API edits it. The manifest schema
+// types `adapters` as unknown[] because each adapter kind is validated
+// separately, so the entry is handled as a loose record here and narrowed by
+// the manifest validation before it is written.
+type MutableManifestGame = {
+  id: string;
+  displayName: string;
+  adapters: unknown[];
+  secretPrefix: string;
+  gracePeriodHours: number;
+  authProvider: "pgs-v2" | "development";
+  economy?: EconomyCatalog;
+};
 
 export type AdminApiOptions = {
   allowedOrigins: string[];
@@ -93,6 +126,22 @@ const GameFlagParams = Type.Object(
   { gameId: Type.String({ minLength: 1, maxLength: 64 }), key: Type.String({ minLength: 1, maxLength: 80 }) },
   { additionalProperties: false },
 );
+const GamePlayerRewardParams = Type.Object(
+  {
+    gameId: Type.String({ minLength: 1, maxLength: 64 }),
+    playerId: Type.String({ minLength: 1, maxLength: 128 }),
+    rewardId: Type.String({ minLength: 1, maxLength: 48 }),
+  },
+  { additionalProperties: false },
+);
+const AdapterParams = Type.Object(
+  { adapterId: Type.String({ minLength: 1, maxLength: 128 }) },
+  { additionalProperties: false },
+);
+
+// An adapter module is a source file an operator shipped; 512 KB is far above
+// any real adapter and keeps the endpoint from serving an arbitrary file.
+const ADAPTER_SOURCE_MAX_BYTES = 512 * 1024;
 const RunsQuery = Type.Object(
   { limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })) },
   { additionalProperties: false },
@@ -121,6 +170,9 @@ type AuditAction =
   | "currency.debit"
   | "item.grant"
   | "item.remove"
+  | "reward.claim"
+  | "economy.update"
+  | "game.update"
   | "manifest.save";
 
 function isoOrNull(value: number | null | undefined): string | null {
@@ -199,6 +251,90 @@ function gameSummary(runtime: Runtime, nowMs: number) {
 function manifestEnvironment(manifestStore: ManifestStore): string {
   const loaded = manifestStore.load();
   return loaded.ok ? loaded.manifest.environment : "development";
+}
+
+// A catalog grant is one of two shapes depending on its kind. The console
+// renders both in one table, so the response flattens them into one row shape
+// and the write endpoint accepts the catalog's own shape back.
+function grantRows(grants: readonly EconomyGrant[]) {
+  return grants.map((grant) =>
+    grant.kind === "currency"
+      ? { kind: "currency" as const, currencyId: grant.currencyId, amount: grant.amount }
+      : { kind: "item" as const, itemId: grant.itemId, quantity: grant.quantity },
+  );
+}
+
+// The whole economy catalog of one game plus the live balance summary. This is
+// the read model the console edits against, so it must carry every field the
+// write endpoint accepts — otherwise a round-trip would silently drop data.
+function economyResponse(runtime: Runtime, nowMs: number) {
+  const summary = runtime.db.economySummary(startOfTodayUtc(nowMs));
+  const economySummary = {
+    currencies: summary.currencies.map((entry) => ({
+      id: entry.currency,
+      amount: entry.amount,
+      holders: entry.holders,
+    })),
+    items: summary.items.map((entry) => ({
+      id: entry.item,
+      quantity: entry.quantity,
+      holders: entry.holders,
+    })),
+    walletTransactions: summary.walletTransactions,
+    inventoryTransactions: summary.inventoryTransactions,
+    playersWithBalance: summary.playersWithBalance,
+  };
+  const catalog = runtime.game.economy;
+  if (!catalog) {
+    return {
+      currencies: [],
+      items: [],
+      offers: [],
+      rewards: [],
+      iapProducts: [],
+      summary: economySummary,
+    };
+  }
+  return {
+    currencies: catalog.currencies.map((currency) => ({ id: currency.id })),
+    items: catalog.items.map((item) => ({
+      id: item.id,
+      type: item.type,
+      stackable: item.stackable,
+      usable: item.usable ?? false,
+    })),
+    offers: catalog.offers.map((offer) => ({
+      id: offer.id,
+      itemId: offer.itemId,
+      quantity: offer.quantity,
+      priceCurrencyId: offer.priceCurrencyId,
+      priceAmount: offer.priceAmount,
+      active: offer.active ?? true,
+      maxPerPlayer: offer.maxPerPlayer ?? null,
+      startsAtMs: offer.startsAtMs ?? null,
+      endsAtMs: offer.endsAtMs ?? null,
+      salePriceAmount: offer.salePriceAmount ?? null,
+      saleStartsAtMs: offer.saleStartsAtMs ?? null,
+      saleEndsAtMs: offer.saleEndsAtMs ?? null,
+    })),
+    rewards: (catalog.rewards ?? []).map((reward) => ({
+      id: reward.id,
+      grants: grantRows(reward.grants),
+      maxClaims: reward.maxClaims ?? null,
+    })),
+    iapProducts: (catalog.iapProducts ?? []).map((product) => ({
+      id: product.id,
+      provider: product.provider,
+      providerProductId: product.providerProductId,
+      packageName: product.packageName,
+      grants: grantRows(product.grants),
+      active: product.active ?? true,
+      startsAtMs: product.startsAtMs ?? null,
+      endsAtMs: product.endsAtMs ?? null,
+      fulfillment: product.fulfillment ?? null,
+    })),
+    summary: economySummary,
+  };
 }
 
 // Daily player and run counts summed across every loaded game, so the
@@ -297,6 +433,53 @@ export async function registerAdminApi(
     }
   };
 
+  // Applies a typed edit to one game's manifest entry, then persists and
+  // reloads. The write is validated against the whole manifest before it
+  // touches disk, and a failed runtime reload restores the previous file —
+  // the console never leaves the server in a half-applied state.
+  const updateManifestGame = async (
+    gameId: string,
+    mutate: (game: MutableManifestGame) => MutableManifestGame,
+  ): Promise<void> => {
+    const loaded = manifestStore.load();
+    if (!loaded.ok) throw new BantamError("manifest-unreadable", loaded.error, 500);
+    const prior = JSON.parse(JSON.stringify(loaded.manifest)) as ManifestFile;
+    const manifest = JSON.parse(JSON.stringify(loaded.manifest)) as ManifestFile;
+    const games = manifest.games as unknown as MutableManifestGame[];
+    let found = false;
+    const nextGames = games.map((game) => {
+      if (game.id !== gameId) return game;
+      found = true;
+      return mutate(game);
+    });
+    if (!found) throw new BantamError("game-not-found", "Game not found", 404);
+    manifest.games = nextGames;
+    if (!Value.Check(ManifestSchema, manifest)) {
+      const details = [...Value.Errors(ManifestSchema, manifest)]
+        .map((item) => `${item.path}: ${item.message}`)
+        .join("; ");
+      throw new BantamError("invalid-manifest", `Invalid manifest: ${details}`, 400);
+    }
+    const saveResult = manifestStore.save(JSON.stringify(manifest, null, 2));
+    if (!saveResult.ok) {
+      throw new BantamError("manifest-save-failed", saveResult.errors.join("; "), 400);
+    }
+    try {
+      await reloadRuntimes(manifest);
+    } catch (error) {
+      try {
+        manifestStore.save(JSON.stringify(prior, null, 2));
+      } catch {
+        // keep the original failure as the reported error
+      }
+      throw new BantamError(
+        "manifest-reload-failed",
+        `Manifest rolled back: runtime reload failed (${String(error)})`,
+        500,
+      );
+    }
+  };
+
   // ─── Session ──────────────────────────────────────────────────────────────
 
   app.get(
@@ -392,6 +575,53 @@ export async function registerAdminApi(
     },
   );
 
+  // Typed edit of one game's identity fields. The game id and the secret
+  // prefix stay out of reach: the id is the database path and the prefix
+  // names the environment variables the server reads at boot.
+  app.put(
+    "/admin/api/games/:gameId/settings",
+    {
+      schema: {
+        params: GameParams,
+        body: GameSettingsWriteBodySchema,
+        response: { 200: GameSettingsResponseSchema },
+      },
+    },
+    async (request: FastifyRequest) => {
+      const runtime = requireRuntime(request);
+      const body = request.body as {
+        displayName: string;
+        authProvider: "pgs-v2" | "development";
+        gracePeriodHours: number;
+      };
+      await updateManifestGame(runtime.game.id, (game) => ({
+        ...game,
+        displayName: body.displayName,
+        authProvider: body.authProvider,
+        gracePeriodHours: body.gracePeriodHours,
+      }));
+      const updated = runtimes.get(runtime.game.id) ?? runtime;
+      recordAudit(request, "game.update", {
+        gameId: runtime.game.id,
+        target: runtime.game.id,
+        details: {
+          displayName: body.displayName,
+          authProvider: body.authProvider,
+          gracePeriodHours: body.gracePeriodHours,
+        },
+      });
+      request.log.info({ admin: request.adminId, game: runtime.game.id }, "admin updated the game settings");
+      return {
+        id: updated.game.id,
+        displayName: updated.game.displayName,
+        authProvider: updated.game.authProvider,
+        gracePeriodHours: updated.game.gracePeriodHours,
+        secretPrefix: updated.game.secretPrefix,
+        environment: manifestEnvironment(manifestStore),
+      };
+    },
+  );
+
   // ─── Leaderboards ─────────────────────────────────────────────────────────
 
   app.get(
@@ -459,6 +689,9 @@ export async function registerAdminApi(
       const row = runtime.db.getPlayerRow(playerId);
       if (!row) throw new BantamError("player-not-found", "Player not found", 404);
       const runCounts = runtime.db.runCountsByPlayer();
+      const rewardLimits = new Map(
+        (runtime.game.economy?.rewards ?? []).map((reward) => [reward.id, reward.maxClaims ?? 1]),
+      );
       return {
         id: row.id,
         displayName: row.displayName,
@@ -507,6 +740,11 @@ export async function registerAdminApi(
           fulfillmentState: entry.fulfillmentState,
           acknowledgeState: entry.acknowledgeState,
           createdAt: isoOrNull(entry.createdAt),
+        })),
+        rewardClaims: runtime.db.rewardClaims(playerId).map((row) => ({
+          rewardId: row.rewardId,
+          claims: row.claims,
+          maxClaims: rewardLimits.get(row.rewardId) ?? 1,
         })),
         runs: runCounts.get(playerId) ?? 0,
       };
@@ -660,6 +898,67 @@ export async function registerAdminApi(
       return runtime.db
         .getInventory(playerId)
         .map((entry) => ({ item: entry.itemId, quantity: entry.quantity }));
+    },
+  );
+
+  // ─── Reward claims ───────────────────────────────────────────────────────
+  // An operator grants a catalog reward to a player. It uses the same
+  // transactional path as the public claim endpoint, so the reward's claim
+  // limit still applies and the grant is recorded in reward_claims.
+
+  app.post(
+    "/admin/api/games/:gameId/players/:playerId/rewards/:rewardId",
+    {
+      schema: {
+        params: GamePlayerRewardParams,
+        body: RewardClaimBodySchema,
+        response: { 200: RewardClaimResponseSchema },
+      },
+    },
+    async (request: FastifyRequest) => {
+      const runtime = requireRuntime(request);
+      const { playerId, rewardId } = request.params as { playerId: string; rewardId: string };
+      if (!runtime.db.getPlayerRow(playerId))
+        throw new BantamError("player-not-found", "Player not found", 404);
+      const catalog = runtime.game.economy;
+      if (!catalog) throw new BantamError("reward-not-found", "This game has no economy catalog", 404);
+      const reward = catalogReward(catalog, rewardId);
+      const body = request.body as { reason?: string; requestId?: string };
+      const requestId = body.requestId?.trim() || `admin-reward:${randomUUID()}`;
+      const result = runtime.db.claimReward(playerId, reward, catalog, requestId, now());
+      const claims = runtime.db.countRewardClaims(playerId, reward.id);
+      recordAudit(request, "reward.claim", {
+        gameId: runtime.game.id,
+        target: playerId,
+        details: {
+          rewardId: reward.id,
+          claims,
+          maxClaims: reward.maxClaims ?? 1,
+          reason: body.reason?.trim() || "admin_reward_claim",
+          replayed: result.replayed,
+        },
+      });
+      request.log.info(
+        {
+          admin: request.adminId,
+          game: runtime.game.id,
+          player: playerId.slice(0, 8),
+          reward: reward.id,
+          claims,
+        },
+        "admin claimed a reward for a player",
+      );
+      return {
+        rewardId: result.rewardId,
+        replayed: result.replayed,
+        claims,
+        maxClaims: reward.maxClaims ?? 1,
+        wallet: result.wallet.map((balance) => ({
+          currency: balance.currencyId,
+          amount: balance.balance,
+        })),
+        inventory: result.inventory.map((entry) => ({ item: entry.itemId, quantity: entry.quantity })),
+      };
     },
   );
 
@@ -834,44 +1133,59 @@ export async function registerAdminApi(
     { schema: { params: GameParams, response: { 200: EconomyResponseSchema } } },
     async (request: FastifyRequest) => {
       const runtime = requireRuntime(request);
-      const catalog = runtime.game.economy;
-      const summary = runtime.db.economySummary(startOfTodayUtc(now()));
-      const economySummary = {
-        currencies: summary.currencies.map((entry) => ({
-          id: entry.currency,
-          amount: entry.amount,
-          holders: entry.holders,
-        })),
-        items: summary.items.map((entry) => ({
-          id: entry.item,
-          quantity: entry.quantity,
-          holders: entry.holders,
-        })),
-        walletTransactions: summary.walletTransactions,
-        inventoryTransactions: summary.inventoryTransactions,
-        playersWithBalance: summary.playersWithBalance,
-      };
-      if (!catalog) {
-        return { currencies: [], items: [], offers: [], summary: economySummary };
+      return economyResponse(runtime, now());
+    },
+  );
+
+  // Typed replacement for the raw-JSON manifest editor: the console sends the
+  // whole catalog, the server validates it against the economy contract, and
+  // the manifest entry is patched and reloaded. Unknown fields are rejected,
+  // and a catalog that breaks referential integrity never reaches disk.
+  app.put(
+    "/admin/api/games/:gameId/economy",
+    {
+      schema: {
+        params: GameParams,
+        body: EconomyCatalogWriteBodySchema,
+        response: { 200: EconomyResponseSchema },
+      },
+    },
+    async (request: FastifyRequest) => {
+      const runtime = requireRuntime(request);
+      const catalog = request.body as EconomyCatalog;
+      try {
+        parseEconomyCatalog(catalog, `/games/${runtime.game.id}/economy`);
+      } catch (error) {
+        throw new BantamError(
+          "invalid-economy",
+          error instanceof Error ? error.message : "Invalid economy catalog",
+          400,
+        );
       }
-      return {
-        currencies: catalog.currencies.map((currency) => ({ id: currency.id })),
-        items: catalog.items.map((item) => ({
-          id: item.id,
-          type: item.type,
-          stackable: item.stackable,
-          usable: item.usable ?? false,
-        })),
-        offers: catalog.offers.map((offer) => ({
-          id: offer.id,
-          itemId: offer.itemId,
-          quantity: offer.quantity,
-          priceCurrencyId: offer.priceCurrencyId,
-          priceAmount: offer.priceAmount,
-          active: offer.active ?? true,
-        })),
-        summary: economySummary,
-      };
+      await updateManifestGame(runtime.game.id, (game) => ({ ...game, economy: catalog }));
+      const updated = runtimes.get(runtime.game.id) ?? runtime;
+      recordAudit(request, "economy.update", {
+        gameId: runtime.game.id,
+        target: runtime.game.id,
+        details: {
+          currencies: catalog.currencies.length,
+          items: catalog.items.length,
+          offers: catalog.offers.length,
+          rewards: catalog.rewards?.length ?? 0,
+          iapProducts: catalog.iapProducts?.length ?? 0,
+        },
+      });
+      request.log.info(
+        {
+          admin: request.adminId,
+          game: runtime.game.id,
+          currencies: catalog.currencies.length,
+          items: catalog.items.length,
+          offers: catalog.offers.length,
+        },
+        "admin updated the economy catalog",
+      );
+      return economyResponse(updated, now());
     },
   );
 
@@ -934,38 +1248,60 @@ export async function registerAdminApi(
 
   app.get("/admin/api/adapters", { schema: { response: { 200: AdaptersResponseSchema } } }, async () => {
     const loaded = listLoadedAdapters();
-    const sources = new Map<string, string>();
-    const gamesByAdapter = new Map<string, string[]>();
-    const loadedManifest = manifestStore.load();
-    // The manifest schema types `adapters` as unknown[]; the store only
-    // accepts real AdapterSpec values, so narrow it here.
-    const manifestGames = loadedManifest.ok
-      ? (loadedManifest.manifest.games as unknown as Array<{
-          id: string;
-          adapters: Array<{ kind: string; source?: string }>;
-        }>)
-      : [];
-    for (const game of manifestGames) {
-      for (const spec of game.adapters) {
-        const source = spec.kind === "file" ? (spec.source ?? "") : `synthesized[${game.id}]`;
-        const adapterId = spec.kind === "file" ? basenameOf(source) : `synthesized[${game.id}]`;
-        const list = gamesByAdapter.get(adapterId) ?? [];
-        if (!list.includes(game.id)) list.push(game.id);
-        gamesByAdapter.set(adapterId, list);
-        if (!sources.has(adapterId)) sources.set(adapterId, source);
-      }
-    }
+    const origins = listAdapterOrigins();
+    const gamesByAdapter = listAdapterGames();
     return {
       adapters: loaded.map((adapter) => ({
         id: adapter.id,
-        kind: adapter.id.startsWith("synthesized") ? "generic" : "file",
+        kind: origins.get(adapter.id)?.kind ?? "file",
         version: adapter.version,
-        source: sources.get(adapter.id) ?? null,
+        source: origins.get(adapter.id)?.source ?? null,
         boards: adapter.boards.map((board) => board.id),
         games: gamesByAdapter.get(adapter.id) ?? [],
       })),
     };
   });
+
+  // The module behind a loaded adapter, as it is on disk right now. Adapters
+  // are shipped by a sibling repository and imported by the runtime at boot,
+  // so this is read-only by design: the console can show what is running, but
+  // editing belongs in the repository that owns the file.
+  app.get(
+    "/admin/api/adapters/:adapterId/source",
+    { schema: { params: AdapterParams, response: { 200: AdapterSourceSchema } } },
+    async (request: FastifyRequest) => {
+      const adapterId = (request.params as { adapterId: string }).adapterId;
+      const file = listAdapterFiles().get(adapterId);
+      if (!file) throw new BantamError("adapter-not-found", "Adapter not found", 404);
+      let bytes: number;
+      try {
+        bytes = statSync(file).size;
+      } catch (error) {
+        throw new BantamError("adapter-unreadable", `Cannot stat ${file}: ${String(error)}`, 500);
+      }
+      if (bytes > ADAPTER_SOURCE_MAX_BYTES) {
+        throw new BantamError(
+          "adapter-source-too-large",
+          `Adapter source is ${bytes} bytes; the limit is ${ADAPTER_SOURCE_MAX_BYTES}`,
+          413,
+        );
+      }
+      let content: string;
+      try {
+        content = readFileSync(file, "utf8");
+      } catch (error) {
+        throw new BantamError("adapter-unreadable", `Cannot read ${file}: ${String(error)}`, 500);
+      }
+      return {
+        id: adapterId,
+        file,
+        language: "javascript",
+        bytes,
+        content,
+        editable: false,
+      };
+    },
+  );
 
   // ─── Manifest ─────────────────────────────────────────────────────────────
 
@@ -1027,9 +1363,4 @@ export async function registerAdminApi(
       return { manifest: manifest as unknown as Record<string, unknown>, environment: manifest.environment };
     },
   );
-}
-
-function basenameOf(source: string): string {
-  const parts = source.split(/[\\/]/);
-  return parts[parts.length - 1] ?? source;
 }

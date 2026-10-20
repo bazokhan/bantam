@@ -6,14 +6,18 @@
 
 import type {
   ActivityPoint,
+  AdapterSourceResponse,
   AdaptersResponse,
   AuditResponse,
   BoardEntriesResponse,
+  EconomyCatalogWrite,
   EconomyResponse,
   FeatureFlagRow,
   FlagWriteRequest,
   FlagsResponse,
   GameDetail,
+  GameSettingsResponse,
+  GameSettingsWriteRequest,
   GameSummary,
   HealthResponse,
   InventoryItem,
@@ -23,6 +27,8 @@ import type {
   PlayerDetail,
   PlayerEntriesResponse,
   PlayersResponse,
+  RewardClaimRequest,
+  RewardClaimResponse,
   RunsResponse,
   SessionResponse,
   WalletBalance,
@@ -182,6 +188,30 @@ export const api = {
   economy: (gameId: string) =>
     request<EconomyResponse>(`/admin/api/games/${encodeURIComponent(gameId)}/economy`),
 
+  saveEconomy: (gameId: string, catalog: EconomyCatalogWrite) =>
+    request<EconomyResponse>(
+      `/admin/api/games/${encodeURIComponent(gameId)}/economy`,
+      json("PUT", catalog),
+    ),
+
+  saveGameSettings: (gameId: string, body: GameSettingsWriteRequest) =>
+    request<GameSettingsResponse>(
+      `/admin/api/games/${encodeURIComponent(gameId)}/settings`,
+      json("PUT", body),
+    ),
+
+  claimReward: (
+    gameId: string,
+    playerId: string,
+    rewardId: string,
+    body: RewardClaimRequest = {},
+  ) =>
+    request<RewardClaimResponse>(
+      `/admin/api/games/${encodeURIComponent(gameId)}/players/${encodeURIComponent(playerId)}` +
+        `/rewards/${encodeURIComponent(rewardId)}`,
+      json("POST", body),
+    ),
+
   health: () => request<HealthResponse>("/admin/api/health"),
 
   manifest: () => request<ManifestResponse>("/admin/api/manifest"),
@@ -190,6 +220,9 @@ export const api = {
     request<ManifestResponse>("/admin/api/manifest", json("PUT", { manifest })),
 
   adapters: () => request<AdaptersResponse>("/admin/api/adapters"),
+
+  adapterSource: (adapterId: string) =>
+    request<AdapterSourceResponse>(`/admin/api/adapters/${encodeURIComponent(adapterId)}/source`),
 
   audit: (params: { limit?: number; action?: string; gameId?: string } = {}) => {
     const query = new URLSearchParams();

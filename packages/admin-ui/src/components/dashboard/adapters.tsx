@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Code2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { number } from "@/lib/format";
@@ -14,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState, KpiStrip, Metric, PageHeader, Panel } from "./primitives";
+import { AdapterSourceDialog } from "./adapter-source";
 
 const HEAD_CLASS =
   "h-9 whitespace-nowrap px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
@@ -22,6 +25,8 @@ const CHIP_CLASS =
   "inline-flex items-center rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground";
 
 export function AdaptersPage() {
+  const [openAdapterId, setOpenAdapterId] = useState<string | null>(null);
+
   const adapters = useQuery({
     queryKey: ["admin-adapters"],
     queryFn: api.adapters,
@@ -86,7 +91,7 @@ export function AdaptersPage() {
               description="No adapter is registered for this instance. The built-in generic adapter is the fallback for trivial games."
             />
           ) : (
-            <Table className="min-w-[880px]">
+            <Table className="min-w-[980px]">
               <TableHeader className="bg-muted/20">
                 <TableRow>
                   <TableHead className={HEAD_CLASS}>Adapter</TableHead>
@@ -95,6 +100,7 @@ export function AdaptersPage() {
                   <TableHead className={HEAD_CLASS}>Boards</TableHead>
                   <TableHead className={HEAD_CLASS}>Games</TableHead>
                   <TableHead className={HEAD_CLASS}>Source</TableHead>
+                  <TableHead className={HEAD_CLASS}>Code</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -146,13 +152,56 @@ export function AdaptersPage() {
                         {adapter.source ?? "—"}
                       </div>
                     </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      {adapter.kind === "generic" ? (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                            title="The built-in generic adapter is synthesized in-process by the server and has no file on disk."
+                          >
+                            <Code2 />
+                            Source
+                          </Button>
+                          <span className="text-xs text-muted-foreground">no file</span>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setOpenAdapterId(adapter.id)}
+                          aria-label={`Show the source of ${adapter.id}`}
+                        >
+                          <Code2 />
+                          Source
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
+
+          <div className="border-t border-border px-4 py-3">
+            <p className="text-xs text-muted-foreground">
+              Adapter code is read-only here. Adapters are written and versioned in their own
+              sibling repository, the server imports the compiled module at boot and there is no hot
+              reload — a change ships with a new deployment and a restart. This console shows which
+              file is running; it never writes to it. Adapters of kind generic are synthesized
+              in-process by the server and have no file on disk, so their source action is disabled.
+            </p>
+          </div>
         </Panel>
       </div>
+
+      <AdapterSourceDialog
+        adapterId={openAdapterId}
+        onOpenChange={(open) => {
+          if (!open) setOpenAdapterId(null);
+        }}
+      />
     </>
   );
 }

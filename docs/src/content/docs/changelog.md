@@ -11,6 +11,16 @@ description: Service, API, adapter, schema, and documentation versions.
 - Database migrations are monotonic and checksummed. They are not tied one-to-one to the service version.
 - Documentation snapshots must pass OpenAPI reconciliation for the release commit.
 
+## Unreleased
+
+Admin-facing only. The public `/v1` API and the SDK are unchanged.
+
+- The admin console is a React SPA at `/admin/console/`, with its JSON API under `/admin/api/*`. The server-rendered dashboard stays at `/admin/legacy` as a no-JavaScript fallback.
+- The sidebar leads with the game in context — overview, leaderboards, players, runs, feature flags, and the economy catalog split into currencies, items, offers, rewards and IAP products — with the cross-game surfaces below. One game switcher replaces the three the sidebar used to carry.
+- The economy catalog and the per-game identity fields are edited with typed inputs instead of raw JSON. Both writes validate the new value, patch the game's manifest entry, reload the game runtimes, and roll the manifest back if the reload fails.
+- Operators can grant a catalog reward to a player from the player drawer, under the reward's own claim limit. Every mutation writes a row to the admin audit trail (`reward.claim`, `economy.update`, `game.update`).
+- The Adapters screen shows the module behind each loaded adapter — its path, size and contents — read-only. Adapters are versioned in their own repository and imported at boot, so the console shows what is running but never rewrites it.
+
 ## 0.3.1 - IAP consume and timed sales
 
 - IAP `packageName` accepts uppercase segments (real Play ids like `com.example.MyGame`).

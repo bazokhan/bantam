@@ -14,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { GameTabs } from "./game-tabs";
 import { EmptyState, KpiStrip, Metric, PageHeader, Panel, StatusBadge } from "./primitives";
 import { useGameId } from "./use-game-id";
 
@@ -32,7 +31,6 @@ export function GameOverviewPage() {
     return (
       <>
         <PageHeader title="Game" description="Loading the game configuration…" />
-        <GameTabs gameId={gameId} />
         <div className="space-y-4">
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-64 w-full" />
@@ -45,7 +43,6 @@ export function GameOverviewPage() {
     return (
       <>
         <PageHeader title="Game" description="Game configuration could not be loaded." />
-        <GameTabs gameId={gameId} />
         <EmptyState
           title="Could not load the game"
           description={game.error instanceof Error ? game.error.message : "Unknown error"}
@@ -64,7 +61,6 @@ export function GameOverviewPage() {
         description={`${data.id} · ${data.environment} · ${data.authProvider} authentication.`}
         breadcrumb={data.id}
       />
-      <GameTabs gameId={gameId} />
 
       <KpiStrip>
         <Metric

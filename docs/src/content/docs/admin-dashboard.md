@@ -11,20 +11,26 @@ The framework includes a session-cookie admin UI on the same port as the API. It
 
 The console talks to a JSON API under `/admin/api/`. The session cookie is `HttpOnly` and `SameSite=Strict`, so the browser attaches it to same-origin requests automatically — no token is ever exposed to JavaScript. Unauthenticated API calls return `401` with a JSON body rather than a redirect.
 
-| Screen              | Path                                   |
-| ------------------- | -------------------------------------- |
-| Overview            | `/admin/console/`                      |
-| Games               | `/admin/console/games`                 |
-| Game detail         | `/admin/console/games/:gameId`         |
-| Leaderboards        | `/admin/console/games/:gameId/boards`  |
-| Players             | `/admin/console/games/:gameId/players` |
-| Runs                | `/admin/console/games/:gameId/runs`    |
-| Feature flags       | `/admin/console/games/:gameId/flags`   |
-| Economy             | `/admin/console/games/:gameId/economy` |
-| Adapters            | `/admin/console/adapters`              |
-| Health              | `/admin/console/health`                |
-| Audit trail         | `/admin/console/audit`                 |
-| Settings (manifest) | `/admin/console/settings`              |
+| Screen              | Path                                              |
+| ------------------- | ------------------------------------------------- |
+| Overview            | `/admin/console/`                                 |
+| Games               | `/admin/console/games`                            |
+| Game detail         | `/admin/console/games/:gameId`                    |
+| Leaderboards        | `/admin/console/games/:gameId/boards`             |
+| Players             | `/admin/console/games/:gameId/players`            |
+| Runs                | `/admin/console/games/:gameId/runs`               |
+| Feature flags       | `/admin/console/games/:gameId/flags`              |
+| Currencies          | `/admin/console/games/:gameId/economy/currencies` |
+| Items               | `/admin/console/games/:gameId/economy/items`      |
+| Offers              | `/admin/console/games/:gameId/economy/offers`     |
+| Rewards             | `/admin/console/games/:gameId/economy/rewards`    |
+| IAP products        | `/admin/console/games/:gameId/economy/iap`        |
+| Adapters            | `/admin/console/adapters`                         |
+| Health              | `/admin/console/health`                           |
+| Audit trail         | `/admin/console/audit`                            |
+| Settings (manifest) | `/admin/console/settings`                         |
+
+The sidebar leads with the links that belong to the game in context — overview, leaderboards, players, runs, feature flags, and the economy catalog split into currencies, items, offers, rewards and IAP products — and the cross-game surfaces (dashboard, all games, adapters, health, audit, settings) sit below them. The game switcher at the top of the sidebar is the only place a game is chosen.
 
 The console is a build artifact of the image. If it has not been built, `/admin/console/` returns `503` with a short page explaining how to build it, and the server-rendered pages below stay available as a fallback.
 
@@ -107,31 +113,52 @@ Every write is gated by the admin session cookie, and each change is logged with
 
 All routes below require the session cookie and answer `401` (JSON) without it.
 
-| Method | Path                                              | Purpose                                                                             |
-| ------ | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| GET    | `/admin/api/session`                              | Signed-in admin identity and whether first-run registration is open.                |
-| POST   | `/admin/api/logout`                               | Revoke the session and clear the cookie.                                            |
-| GET    | `/admin/api/overview`                             | KPIs, 7-day activity series, per-game summary, recent score entries.                |
-| GET    | `/admin/api/games`                                | Per-game summary (id, name, auth, boards, players, flags, env presence).            |
-| GET    | `/admin/api/games/:id`                            | Game detail: grace period, environment, adapters, boards, env keys.                 |
-| GET    | `/admin/api/games/:id/boards/:boardId`            | Ranked entries for a board and its available period keys.                           |
-| GET    | `/admin/api/games/:id/players`                    | Player table plus the total player count.                                           |
-| GET    | `/admin/api/games/:id/players/:playerId`          | Wallet, ledger, inventory ledger, store purchases, IAP state, run count.            |
-| GET    | `/admin/api/games/:id/players/:playerId/entries`  | Every board and period the player is ranked on, with their rank on each.            |
-| POST   | `/admin/api/games/:id/players/:playerId/currency` | Audited credit/debit for a catalog currency, with a reason.                         |
-| POST   | `/admin/api/games/:id/players/:playerId/item`     | Audited grant/remove of a catalog item, with a reason.                              |
-| DELETE | `/admin/api/games/:id/players/:playerId`          | Delete a single player; reuses the same `deletePlayer` path the public API exposes. |
-| GET    | `/admin/api/games/:id/runs`                       | Recent score entries with board, value and player.                                  |
-| GET    | `/admin/api/games/:id/flags`                      | Feature flags with their targeting summary.                                         |
-| PUT    | `/admin/api/games/:id/flags/:key`                 | Create or replace a flag by key.                                                    |
-| POST   | `/admin/api/games/:id/flags/:key/toggle`          | Flip enabled without touching rollout or value.                                     |
-| DELETE | `/admin/api/games/:id/flags/:key`                 | Delete a flag (confirm-guarded).                                                    |
-| GET    | `/admin/api/games/:id/economy`                    | Catalog plus the live summary: supply, holders and ledger velocity.                 |
-| GET    | `/admin/api/health`                               | Per-game db readiness, adapter coverage, env completeness, CORS origins.            |
-| GET    | `/admin/api/adapters`                             | Loaded adapters and the games that reference them.                                  |
-| GET    | `/admin/api/audit`                                | The operator action trail. Supports `limit`, `action` and `gameId` filters.         |
-| GET    | `/admin/api/manifest`                             | The manifest document and the current environment.                                  |
-| PUT    | `/admin/api/manifest`                             | Save + reload runtimes; rolls back on reload failure.                               |
+| Method | Path                                                       | Purpose                                                                               |
+| ------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| GET    | `/admin/api/session`                                       | Signed-in admin identity and whether first-run registration is open.                  |
+| POST   | `/admin/api/logout`                                        | Revoke the session and clear the cookie.                                              |
+| GET    | `/admin/api/overview`                                      | KPIs, 7-day activity series, per-game summary, recent score entries.                  |
+| GET    | `/admin/api/games`                                         | Per-game summary (id, name, auth, boards, players, flags, env presence).              |
+| GET    | `/admin/api/games/:id`                                     | Game detail: grace period, environment, adapters, boards, env keys.                   |
+| GET    | `/admin/api/games/:id/boards/:boardId`                     | Ranked entries for a board and its available period keys.                             |
+| GET    | `/admin/api/games/:id/players`                             | Player table plus the total player count.                                             |
+| GET    | `/admin/api/games/:id/players/:playerId`                   | Wallet, ledger, inventory ledger, store purchases, IAP state, run count.              |
+| GET    | `/admin/api/games/:id/players/:playerId/entries`           | Every board and period the player is ranked on, with their rank on each.              |
+| POST   | `/admin/api/games/:id/players/:playerId/currency`          | Audited credit/debit for a catalog currency, with a reason.                           |
+| POST   | `/admin/api/games/:id/players/:playerId/item`              | Audited grant/remove of a catalog item, with a reason.                                |
+| DELETE | `/admin/api/games/:id/players/:playerId`                   | Delete a single player; reuses the same `deletePlayer` path the public API exposes.   |
+| GET    | `/admin/api/games/:id/runs`                                | Recent score entries with board, value and player.                                    |
+| GET    | `/admin/api/games/:id/flags`                               | Feature flags with their targeting summary.                                           |
+| PUT    | `/admin/api/games/:id/flags/:key`                          | Create or replace a flag by key.                                                      |
+| POST   | `/admin/api/games/:id/flags/:key/toggle`                   | Flip enabled without touching rollout or value.                                       |
+| DELETE | `/admin/api/games/:id/flags/:key`                          | Delete a flag (confirm-guarded).                                                      |
+| GET    | `/admin/api/games/:id/economy`                             | The whole catalog plus the live summary: supply, holders and ledger velocity.         |
+| PUT    | `/admin/api/games/:id/economy`                             | Save the typed catalog; validates, patches the manifest, reloads, rolls back on fail. |
+| PUT    | `/admin/api/games/:id/settings`                            | Save the typed per-game identity fields (display name, auth provider, grace period).  |
+| POST   | `/admin/api/games/:id/players/:playerId/rewards/:rewardId` | Operator-initiated reward claim for one player.                                       |
+| GET    | `/admin/api/health`                                        | Per-game db readiness, adapter coverage, env completeness, CORS origins.              |
+| GET    | `/admin/api/adapters`                                      | Loaded adapters and the games that reference them.                                    |
+| GET    | `/admin/api/adapters/:adapterId/source`                    | The adapter module as it is on disk. Read-only.                                       |
+| GET    | `/admin/api/audit`                                         | The operator action trail. Supports `limit`, `action` and `gameId` filters.           |
+| GET    | `/admin/api/manifest`                                      | The manifest document and the current environment.                                    |
+| PUT    | `/admin/api/manifest`                                      | Save + reload runtimes; rolls back on reload failure.                                 |
+
+### Typed catalog editing
+
+The economy catalog and the per-game identity fields are edited through typed inputs, not JSON. Both writes go through the same path: the server validates the new value against the manifest contract, patches the game's entry in the manifest file, reloads the game runtimes, and rolls the file back if the reload fails.
+
+- `PUT /admin/api/games/:id/economy` takes the whole catalog — currencies, items, offers, rewards and IAP products — and replaces the game's `economy` entry. Unknown fields are rejected. The catalog is re-validated against the economy contract (unique ids, known item and currency references, sale price below list price, window ordering, permanent items sold one at a time) before anything is written, so a catalog that breaks referential integrity never reaches disk.
+- `PUT /admin/api/games/:id/settings` takes `displayName`, `authProvider` and `gracePeriodHours`. The game id and the secret prefix are deliberately not editable: the id is the database path and the prefix names the environment variables the server reads at boot.
+
+The raw-JSON manifest editor stays available under Settings for the parts the typed forms cannot express — the adapter list and the shape of a game entry. It is the same endpoint the console has always used, with the same validation and the same rollback.
+
+### Operator reward claims
+
+`POST /admin/api/games/:id/players/:playerId/rewards/:rewardId` grants a catalog reward to a player. It calls the same transactional path the public claim endpoint uses, so the reward's own claim limit still applies: a reward with `maxClaims` of 1 (the default) can only be granted once per player, and a second attempt is refused with `409`. The grant is recorded in `reward_claims` and shows up in the player drawer with the claim count against the limit.
+
+### Adapter source
+
+`GET /admin/api/adapters/:adapterId/source` returns the module behind a loaded adapter: its absolute path, its size and its contents. It is read-only by design. Adapters are written and versioned in their own sibling repository, the runtime imports the compiled module at boot, and there is no hot reload — a change ships with a new deployment and a restart. The console shows exactly which file is running; it does not write to it. Adapters the server synthesizes in-process (the built-in generic form) have no file and answer `404`.
 
 ### Audit trail
 
@@ -147,6 +174,9 @@ Every write the console performs appends one row to `admin_audit` in the admin d
 | `currency.debit`  | An operator debits a player's currency.  |
 | `item.grant`      | An operator grants an item.              |
 | `item.remove`     | An operator removes an item.             |
+| `reward.claim`    | An operator grants a reward to a player. |
+| `economy.update`  | The economy catalog is saved.            |
+| `game.update`     | A game's settings are saved.             |
 | `manifest.save`   | The manifest is saved.                   |
 
 The detail object never carries credentials, tokens, raw provider ids, IP addresses or headers — it holds only the values the operator typed, such as the amount, the currency id and the reason.

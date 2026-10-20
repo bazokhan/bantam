@@ -10,19 +10,28 @@ import type { Static } from "@sinclair/typebox";
 
 import type {
   ActivityPointSchema,
+  AdapterSourceSchema,
   AdapterSummarySchema,
   AdaptersResponseSchema,
   AuditEntrySchema,
   AuditResponseSchema,
   BoardEntriesResponseSchema,
   BoardSummarySchema,
+  EconomyCatalogWriteBodySchema,
+  EconomyGrantRowSchema,
+  EconomyGrantSchema,
+  EconomyIapProductRowSchema,
+  EconomyOfferRowSchema,
   EconomyResponseSchema,
+  EconomyRewardRowSchema,
   EconomySummarySchema,
   EnvKeyStatusSchema,
   FeatureFlagRowSchema,
   FlagWriteBodySchema,
   FlagsResponseSchema,
   GameDetailSchema,
+  GameSettingsResponseSchema,
+  GameSettingsWriteBodySchema,
   GameSummarySchema,
   HealthResponseSchema,
   InventoryItemSchema,
@@ -35,9 +44,12 @@ import type {
   PlayerDetailSchema,
   PlayerEntriesResponseSchema,
   PlayerEntrySchema,
+  PlayerRewardClaimSchema,
   PlayersResponseSchema,
   PlayerSummarySchema,
   PurchaseRowSchema,
+  RewardClaimBodySchema,
+  RewardClaimResponseSchema,
   RunSummarySchema,
   RunsResponseSchema,
   SessionResponseSchema,
@@ -81,3 +93,19 @@ export type PlayerEntry = Static<typeof PlayerEntrySchema>;
 export type PlayerEntriesResponse = Static<typeof PlayerEntriesResponseSchema>;
 export type InventoryTransaction = Static<typeof InventoryTransactionSchema>;
 export type EconomySummary = Static<typeof EconomySummarySchema>;
+export type EconomyGrantRow = Static<typeof EconomyGrantRowSchema>;
+export type EconomyOfferRow = Static<typeof EconomyOfferRowSchema>;
+export type EconomyRewardRow = Static<typeof EconomyRewardRowSchema>;
+export type EconomyIapProductRow = Static<typeof EconomyIapProductRowSchema>;
+export type PlayerRewardClaim = Static<typeof PlayerRewardClaimSchema>;
+export type RewardClaimResponse = Static<typeof RewardClaimResponseSchema>;
+export type AdapterSourceResponse = Static<typeof AdapterSourceSchema>;
+export type GameSettingsResponse = Static<typeof GameSettingsResponseSchema>;
+
+/** The catalog shape the economy write endpoint accepts. */
+export type EconomyCatalogWrite = Static<typeof EconomyCatalogWriteBodySchema>;
+/** A grant in its catalog shape: currency grants carry an amount, item grants a quantity. */
+export type EconomyGrant = Static<typeof EconomyGrantSchema>;
+export type EconomyCatalogWriteRequest = Static<typeof EconomyCatalogWriteBodySchema>;
+export type GameSettingsWriteRequest = Static<typeof GameSettingsWriteBodySchema>;
+export type RewardClaimRequest = Static<typeof RewardClaimBodySchema>;

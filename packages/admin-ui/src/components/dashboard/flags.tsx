@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmAction, EmptyState, PageHeader, Panel, StatusBadge } from "./primitives";
-import { GameTabs } from "./game-tabs";
 import { useGameId } from "./use-game-id";
 
 interface FlagDraft {
@@ -173,7 +172,6 @@ export function FlagsPage() {
           title="Feature flags"
           description="Operator-defined switches for this game, resolved server-side."
         />
-        <GameTabs gameId={gameId} />
         <EmptyState
           title="Could not load the feature flags"
           description={flags.error instanceof Error ? flags.error.message : "Unknown error"}
@@ -198,8 +196,6 @@ export function FlagsPage() {
           </div>
         }
       />
-
-      <GameTabs gameId={gameId} />
 
       <Panel title="Flags" description="Toggle, edit or delete a flag">
         {rows.length === 0 ? (

@@ -1,10 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { grantLabel } from "@/lib/economy";
 import { number, relativeTime, shortId } from "@/lib/format";
+import type { EconomyRewardRow, PlayerRewardClaim, RewardClaimRequest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -24,7 +27,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { GameTabs } from "./game-tabs";
 import { EconomyAdjust } from "./economy-adjust";
 import { PlayerEntriesSection } from "./player-entries";
 import {
@@ -38,6 +40,7 @@ import {
 import { useGameId } from "./use-game-id";
 
 const LEDGER_LIMIT = 25;
+const REASON_MAX_LENGTH = 64;
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -47,6 +50,163 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </h3>
       {children}
     </section>
+  );
+}
+
+function RewardClaimRow({
+  gameId,
+  playerId,
+  reward,
+  claim,
+}: {
+  gameId: string;
+  playerId: string;
+  reward: EconomyRewardRow;
+  claim: PlayerRewardClaim | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState("");
+  const claims = claim?.claims ?? 0;
+  const maxClaims = reward.maxClaims ?? 1;
+  const limitReached = claims >= maxClaims;
+
+  const claimReward = useMutation({
+    mutationFn: () => {
+      const body: RewardClaimRequest = {};
+      const trimmed = reason.trim();
+      if (trimmed) body.reason = trimmed;
+      return api.claimReward(gameId, playerId, reward.id, body);
+    },
+    onSuccess: async (result) => {
+      toast.success(`Reward ${result.rewardId} claimed`);
+      setReason("");
+      await queryClient.invalidateQueries({ queryKey: ["admin-player", gameId, playerId] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-economy", gameId] });
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  return (
+    <TableRow>
+      <TableCell className="px-3 py-2 font-mono text-xs">{reward.id}</TableCell>
+      <TableCell className="px-3 py-2 text-xs">
+        {reward.grants.length === 0 ? "—" : reward.grants.map(grantLabel).join(", ")}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right font-mono text-sm tabular-nums">
+        {number(claims)}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right font-mono text-sm tabular-nums">
+        {number(maxClaims)}
+      </TableCell>
+      <TableCell className="px-3 py-2">
+        <div className="flex items-center justify-end gap-2">
+          {limitReached ? (
+            <span className="text-xs text-muted-foreground">claim limit reached</span>
+          ) : null}
+          <Input
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="support compensation"
+            aria-label={`Reason for claiming ${reward.id}`}
+            maxLength={REASON_MAX_LENGTH}
+            disabled={limitReached || claimReward.isPending}
+            className="h-8 w-44 text-xs"
+          />
+          <Button
+            size="sm"
+            disabled={limitReached || claimReward.isPending}
+            onClick={() => claimReward.mutate()}
+          >
+            {claimReward.isPending ? <Loader2 className="animate-spin" /> : null}
+            Claim
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function PlayerRewards({
+  gameId,
+  playerId,
+  claims,
+}: {
+  gameId: string;
+  playerId: string;
+  claims: PlayerRewardClaim[];
+}) {
+  const economy = useQuery({
+    queryKey: ["admin-economy", gameId],
+    queryFn: () => api.economy(gameId),
+  });
+
+  if (economy.isLoading) {
+    return (
+      <div className="p-3">
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  if (economy.isError) {
+    return (
+      <EmptyState
+        title="Could not load the rewards"
+        description={economy.error instanceof Error ? economy.error.message : "Unknown error"}
+      />
+    );
+  }
+
+  const rewards = economy.data?.rewards ?? [];
+
+  if (rewards.length === 0) {
+    return (
+      <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+        This game declares no rewards.
+      </p>
+    );
+  }
+
+  const claimsByReward = new Map<string, PlayerRewardClaim>();
+  for (const claim of claims) {
+    claimsByReward.set(claim.rewardId, claim);
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="h-8 px-3 text-[11px] font-semibold uppercase tracking-wide">
+            Reward
+          </TableHead>
+          <TableHead className="h-8 px-3 text-[11px] font-semibold uppercase tracking-wide">
+            Grants
+          </TableHead>
+          <TableHead className="h-8 px-3 text-right text-[11px] font-semibold uppercase tracking-wide">
+            Claims
+          </TableHead>
+          <TableHead className="h-8 px-3 text-right text-[11px] font-semibold uppercase tracking-wide">
+            Limit
+          </TableHead>
+          <TableHead className="h-8 px-3 text-right text-[11px] font-semibold uppercase tracking-wide">
+            Claim
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rewards.map((reward) => (
+          <RewardClaimRow
+            key={reward.id}
+            gameId={gameId}
+            playerId={playerId}
+            reward={reward}
+            claim={claimsByReward.get(reward.id)}
+          />
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -129,7 +289,6 @@ export function PlayersPage() {
     return (
       <>
         <PageHeader title="Players" description="Loading the players of this game…" />
-        <GameTabs gameId={gameId} />
         <div className="space-y-4">
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-72 w-full" />
@@ -142,7 +301,6 @@ export function PlayersPage() {
     return (
       <>
         <PageHeader title="Players" description="Players could not be loaded." />
-        <GameTabs gameId={gameId} />
         <EmptyState
           title="Could not load the players"
           description={players.error instanceof Error ? players.error.message : "Unknown error"}
@@ -160,7 +318,6 @@ export function PlayersPage() {
         title="Players"
         description="Every account that signed into this game. Open a player to inspect its wallet, ledger, and purchases."
       />
-      <GameTabs gameId={gameId} />
 
       <Panel title="Players" description={`${number(total)} registered`}>
         <DataToolbar
@@ -594,6 +751,16 @@ export function PlayersPage() {
                   )}
                 </Section>
               </div>
+
+              <Section title="Rewards">
+                {selectedId ? (
+                  <PlayerRewards
+                    gameId={gameId}
+                    playerId={selectedId}
+                    claims={detail.data.rewardClaims ?? []}
+                  />
+                ) : null}
+              </Section>
 
               {selectedId ? <EconomyAdjust gameId={gameId} playerId={selectedId} /> : null}
             </div>

@@ -14,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { GameTabs } from "./game-tabs";
 import {
   DataToolbar,
   EmptyState,
@@ -72,7 +71,6 @@ export function RunsPage() {
     return (
       <>
         <PageHeader title="Runs" description="Loading the runs of this game…" />
-        <GameTabs gameId={gameId} />
         <div className="space-y-4">
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-72 w-full" />
@@ -85,7 +83,6 @@ export function RunsPage() {
     return (
       <>
         <PageHeader title="Runs" description="Runs could not be loaded." />
-        <GameTabs gameId={gameId} />
         <EmptyState
           title="Could not load the runs"
           description={runs.error instanceof Error ? runs.error.message : "Unknown error"}
@@ -101,7 +98,6 @@ export function RunsPage() {
         title="Runs"
         description="The 100 most recent submitted runs. Runs are read-only here — leaderboard values are derived by the server adapter inside the run transaction."
       />
-      <GameTabs gameId={gameId} />
 
       <KpiStrip>
         <Metric

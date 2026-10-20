@@ -14,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { GameTabs } from "./game-tabs";
 import { CopyButton, EmptyState, PageHeader, Panel, SimpleSelect, StatusBadge } from "./primitives";
 import { useGameId } from "./use-game-id";
 
@@ -59,7 +58,6 @@ export function BoardsPage() {
     return (
       <>
         <PageHeader title="Leaderboards" description="Loading the game leaderboards…" />
-        <GameTabs gameId={gameId} />
         <div className="space-y-4">
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-72 w-full" />
@@ -72,7 +70,6 @@ export function BoardsPage() {
     return (
       <>
         <PageHeader title="Leaderboards" description="Game leaderboards could not be loaded." />
-        <GameTabs gameId={gameId} />
         <EmptyState
           title="Could not load the boards"
           description={game.error instanceof Error ? game.error.message : "Unknown error"}
@@ -88,7 +85,6 @@ export function BoardsPage() {
         title="Leaderboards"
         description={`Every board declared by the adapters of ${game.data.displayName}.`}
       />
-      <GameTabs gameId={gameId} />
 
       {boards.length === 0 ? (
         <Panel title="Boards" description="No board is declared for this game">

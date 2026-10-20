@@ -11,6 +11,17 @@ const directoryCache = new Map<string, Map<string, LoadedAdapter>>();
 // Per-game adapter map. Populated by buildApp via loadAdaptersForGame.
 const gameAdapters = new Map<string, Map<string, GameAdapterV1>>();
 
+// Absolute path of the module behind each loaded adapter, keyed by adapter id.
+// The loader resolves it; the registry keeps it so the admin API can show an
+// operator the exact file that is running. Synthesized adapters have no file.
+const adapterFiles = new Map<string, string>();
+
+// How each adapter came to be, keyed by adapter id. The manifest says which
+// file a game points at; the adapter says what that file turned out to be.
+// The admin API needs both to tell a file adapter from a synthesized one.
+type AdapterOrigin = { kind: "file" | "generic"; source: string };
+const adapterOrigins = new Map<string, AdapterOrigin>();
+
 // One preload slot — the directory the runtime container mounts.
 // `preloadAdapterDirectory` may be called once before `buildApp`.
 let preloadedDir: string | undefined;
@@ -34,6 +45,8 @@ export async function loadAdaptersForGame(
     if (spec.kind === "generic") {
       const adapter = new GenericAdapter(spec.boards);
       register(map, adapter, `synthesized[${gameId}]`);
+      if (!adapterOrigins.has(adapter.id))
+        adapterOrigins.set(adapter.id, { kind: "generic", source: `synthesized[${gameId}]` });
       continue;
     }
     const dir = preloadedDir;
@@ -62,6 +75,9 @@ export async function loadAdaptersForGame(
       );
     }
     register(map, loaded.adapter, spec.source);
+    if (!adapterFiles.has(loaded.adapter.id)) adapterFiles.set(loaded.adapter.id, loaded.file);
+    if (!adapterOrigins.has(loaded.adapter.id))
+      adapterOrigins.set(loaded.adapter.id, { kind: "file", source: spec.source });
   }
   gameAdapters.set(gameId, map);
   return map;
@@ -97,4 +113,29 @@ export function listLoadedAdapters(): readonly GameAdapterV1[] {
 // Test/admin helper. Returns the per-game adapter map for the given game id.
 export function adaptersFor(gameId: string): ReadonlyMap<string, GameAdapterV1> | undefined {
   return gameAdapters.get(gameId);
+}
+
+// Source file of every adapter loaded from disk, keyed by adapter id.
+// Adapters synthesized in-process (the built-in generic form) are absent.
+export function listAdapterFiles(): ReadonlyMap<string, string> {
+  return adapterFiles;
+}
+
+// How each loaded adapter came to be: a file the operator shipped, or one the
+// server synthesized for a game that declared no adapter.
+export function listAdapterOrigins(): ReadonlyMap<string, AdapterOrigin> {
+  return adapterOrigins;
+}
+
+// The games each adapter is registered for, keyed by adapter id.
+export function listAdapterGames(): ReadonlyMap<string, readonly string[]> {
+  const out = new Map<string, string[]>();
+  for (const [gameId, map] of gameAdapters) {
+    for (const adapterId of map.keys()) {
+      const list = out.get(adapterId) ?? [];
+      list.push(gameId);
+      out.set(adapterId, list);
+    }
+  }
+  return out;
 }

@@ -79,10 +79,43 @@ const flagsRoute = createRoute({
   path: "flags",
   component: FlagsPage,
 });
+// The economy section is a group of pages, not one page: currencies, items,
+// offers, rewards and IAP products are edited separately, so each has its own
+// route and its own entry in the sidebar.
 const economyRoute = createRoute({
   getParentRoute: () => gameRoute,
   path: "economy",
-  component: EconomyPage,
+  component: () => <Outlet />,
+});
+const economyIndexRoute = createRoute({
+  getParentRoute: () => economyRoute,
+  path: "/",
+  component: () => <EconomyPage section="currencies" />,
+});
+const economyCurrenciesRoute = createRoute({
+  getParentRoute: () => economyRoute,
+  path: "currencies",
+  component: () => <EconomyPage section="currencies" />,
+});
+const economyItemsRoute = createRoute({
+  getParentRoute: () => economyRoute,
+  path: "items",
+  component: () => <EconomyPage section="items" />,
+});
+const economyOffersRoute = createRoute({
+  getParentRoute: () => economyRoute,
+  path: "offers",
+  component: () => <EconomyPage section="offers" />,
+});
+const economyRewardsRoute = createRoute({
+  getParentRoute: () => economyRoute,
+  path: "rewards",
+  component: () => <EconomyPage section="rewards" />,
+});
+const economyIapRoute = createRoute({
+  getParentRoute: () => economyRoute,
+  path: "iap",
+  component: () => <EconomyPage section="iap" />,
 });
 
 const adaptersRoute = createRoute({
@@ -116,7 +149,14 @@ const routeTree = rootRoute.addChildren([
       playersRoute,
       runsRoute,
       flagsRoute,
-      economyRoute,
+      economyRoute.addChildren([
+        economyIndexRoute,
+        economyCurrenciesRoute,
+        economyItemsRoute,
+        economyOffersRoute,
+        economyRewardsRoute,
+        economyIapRoute,
+      ]),
     ]),
   ]),
   adaptersRoute,
