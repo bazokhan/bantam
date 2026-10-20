@@ -20,8 +20,10 @@ services:
     volumes:
       - bantam-data:/data
       # Demo manifest is mounted read-only — useful for shipping a known game.
-      # To use the admin Manifest editor, drop this mount and use the UI at
-      # /admin/manifest after the inaugural admin registration.
+      # The console's typed editors (Settings, the economy catalog) write the
+      # manifest, so they need a writable one: drop this mount and let the
+      # server own /etc/bantam/games.json, then edit from the console after
+      # the inaugural admin registration.
       - ./config/games.demo.json:/etc/bantam/games.json:ro
       - ./test/fixtures/adapters:/bantam/adapters:ro
     read_only: true
