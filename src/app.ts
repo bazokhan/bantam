@@ -8,7 +8,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import Fastify, { LogController, type FastifyInstance } from "fastify";
 import { Registry, collectDefaultMetrics, Counter, Histogram } from "prom-client";
 import { loadAdaptersForGame, listLoadedAdapters } from "./adapters/registry.js";
-import { ManifestStore } from "./admin/manifest-store.js";
+import { ManifestStore, type ManifestFile } from "./admin/manifest-store.js";
 import { enforceBootRules, resolveGameSecrets } from "./config.js";
 import { AdminDatabase } from "./db/admin-database.js";
 import { providerFor } from "./auth/provider.js";
@@ -789,33 +789,40 @@ export async function buildApp(
       route.schema = { ...route.schema, hide: true };
     }
   });
-  await registerAdmin(
-    app,
-    adminDb,
-    registry.map,
-    async (manifest) => {
-      // Re-run the same boot invariants the initial loader enforces, so a
-      // manifest save can't slip past a rule (e.g. production + development
-      // auth) that boot would have rejected.
-      // The manifest schema leaves `adapters` as `unknown[]` for schema reasons
-      // (each adapter kind is validated separately); the store guarantees
-      // they are real AdapterSpec by the time we get here.
-      const games = manifest.games as unknown as Parameters<typeof enforceBootRules>[1];
-      enforceBootRules(manifest.environment, games);
-      const enriched = games.map((g) => resolveGameSecrets(g));
-      const result = await registry.replaceAll(enriched, {
-        dataDir: config.dataDir,
-        migrationsDirectory,
-        ...(options.iapVerifierFactory ? { iapVerifierFactory: options.iapVerifierFactory } : {}),
-      });
-      app.log.info(
-        { added: result.added, removed: result.removed, kept: result.kept.length },
-        "runtime reloaded after manifest edit",
-      );
-      return result;
-    },
-    manifestStore,
-  );
+  const reloadRuntimes = async (manifest: ManifestFile) => {
+    // Re-run the same boot invariants the initial loader enforces, so a
+    // manifest save can't slip past a rule (e.g. production + development
+    // auth) that boot would have rejected.
+    // The manifest schema leaves `adapters` as `unknown[]` for schema reasons
+    // (each adapter kind is validated separately); the store guarantees
+    // they are real AdapterSpec by the time we get here.
+    const games = manifest.games as unknown as Parameters<typeof enforceBootRules>[1];
+    enforceBootRules(manifest.environment, games);
+    const enriched = games.map((g) => resolveGameSecrets(g));
+    const result = await registry.replaceAll(enriched, {
+      dataDir: config.dataDir,
+      migrationsDirectory,
+      ...(options.iapVerifierFactory ? { iapVerifierFactory: options.iapVerifierFactory } : {}),
+    });
+    app.log.info(
+      { added: result.added, removed: result.removed, kept: result.kept.length },
+      "runtime reloaded after manifest edit",
+    );
+    return result;
+  };
+  await registerAdmin(app, adminDb, registry.map, reloadRuntimes, manifestStore);
+
+  // JSON API backing the React console at /admin/console/.
+  const { registerAdminApi } = await import("./admin/api.js");
+  await registerAdminApi(app, adminDb, registry.map, reloadRuntimes, manifestStore, {
+    allowedOrigins: config.allowedOrigins,
+    version: "0.3.1",
+  });
+
+  // Static bundle for the console.
+  const { registerAdminUi } = await import("./admin/spa.js");
+  await registerAdminUi(app);
+
   app.addHook("onClose", async () => {
     adminDb.close();
   });

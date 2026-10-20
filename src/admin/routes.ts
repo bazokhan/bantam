@@ -15,12 +15,14 @@ import {
 } from "../auth/admin.js";
 import type { AdminDatabase } from "../db/admin-database.js";
 import { BantamError } from "../errors.js";
-import { catalogCurrency, catalogItem, googlePlayServiceAccountEnv } from "../services/economy.js";
+import { catalogCurrency, catalogItem } from "../services/economy.js";
 import { applyEconomyFromForm, currencyOptions, itemOptions, renderEconomyFields } from "./economy-form.js";
+import { envPresence, requiredEnvKeys } from "./env-keys.js";
 import type { AdapterSpec, BoardDefinition, RuntimeGame } from "../types.js";
 import {
   clearCookieValue,
   cookieHook,
+  cookieSecureFor,
   redirectIfAuthenticated,
   serializeCookie,
   sessionCookieMiddleware,
@@ -49,28 +51,6 @@ import {
 } from "./templates.js";
 
 export type ReloadRuntimes = (manifest: ManifestFile) => Promise<{ added: string[]; removed: string[] }>;
-
-// Required env keys per game. Booleans only — never echo the value back to
-// the operator, even in error messages. The full key names are documented in
-// the SKILL so this list stays authoritative.
-function requiredEnvKeys(game: RuntimeGame): string[] {
-  const base = [
-    `${game.secretPrefix}_IDENTITY_SALT`,
-    `${game.secretPrefix}_SESSION_SECRET`,
-    `${game.secretPrefix}_CURSOR_SECRET`,
-  ];
-  if (game.authProvider === "pgs-v2")
-    base.push(`${game.secretPrefix}_PGS_CLIENT_ID`, `${game.secretPrefix}_PGS_CLIENT_SECRET`);
-  if (game.economy?.iapProducts?.some((product) => product.provider === "google_play"))
-    base.push(googlePlayServiceAccountEnv(game.secretPrefix));
-  return base;
-}
-
-function envPresence(keys: readonly string[]): Record<string, boolean> {
-  const out: Record<string, boolean> = {};
-  for (const key of keys) out[key] = Boolean(process.env[key]) && (process.env[key] ?? "").length >= 16;
-  return out;
-}
 
 // First 8 chars of the SHA-256(player id) for display. Operators don't need the
 // full id to disambiguate two players; the full id is only revealed inside
@@ -145,7 +125,8 @@ export async function registerAdmin(
 
   const nav = (active: string) =>
     [
-      { href: "/admin/", label: "Overview" },
+      { href: "/admin/console/", label: "Console" },
+      { href: "/admin/legacy", label: "Overview (legacy)" },
       { href: "/admin/games", label: "Games" },
       { href: "/admin/adapters", label: "Adapters" },
       { href: "/admin/health", label: "Health" },
@@ -153,13 +134,6 @@ export async function registerAdmin(
     ].map((item) => ({ ...item, active: active === item.href || active.startsWith(item.href + "?") }));
 
   const countAdmins = () => adminDb.countAdmins();
-
-  const cookieSecureFor = (request: { protocol: string }): boolean => {
-    const flag = process.env.BANTAM_ADMIN_COOKIE_SECURE;
-    if (flag === "true") return true;
-    if (flag === "false") return false;
-    return request.protocol === "https";
-  };
 
   // ─── Auth pages ───────────────────────────────────────────────────────────────
 
@@ -397,12 +371,18 @@ export async function registerAdmin(
     const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies ?? {};
     const cookie = cookies[ADMIN_COOKIE_NAME];
     if (cookie) revokeSession(adminDb, cookie);
-    return reply.header("set-cookie", clearCookieValue(ADMIN_COOKIE_NAME)).redirect("/admin/login", 302);
+    return reply
+      .header("set-cookie", clearCookieValue(ADMIN_COOKIE_NAME, { secure: cookieSecureFor(request) }))
+      .redirect("/admin/login", 302);
   });
 
   // ─── Overview ────────────────────────────────────────────────────────────────
 
-  app.get("/admin/", async (_request, reply) => {
+  // The React console is the canonical dashboard. The server-rendered page
+  // stays available at /admin/legacy as a no-JavaScript fallback.
+  app.get("/admin/", async (_request, reply) => reply.redirect("/admin/console/", 302));
+
+  app.get("/admin/legacy", async (_request, reply) => {
     const games = [...runtimes.values()];
     const totals = {
       games: games.length,
@@ -456,7 +436,7 @@ export async function registerAdmin(
       </div>
       <h2 style="margin-top:1.5rem">Games</h2>
       ${gameCards}`;
-    return reply.type("text/html").send(shell("Overview", body, nav("/admin/")));
+    return reply.type("text/html").send(shell("Overview", body, nav("/admin/legacy")));
   });
 
   // ─── Games list ──────────────────────────────────────────────────────────────

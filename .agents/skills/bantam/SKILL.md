@@ -27,7 +27,7 @@ Probe, in order: `GET /healthz`, `GET /version`, `GET /openapi.json`. `/version.
 
 ### Feature flags
 
-Per-game, server-resolved, read-only to clients. Operators set them at `/admin/games/{id}/flags`; clients read `GET /v1/games/{gameId}/flags` or call `bantam.getFlags()` / `bantam.isEnabled(key)`.
+Per-game, server-resolved, read-only to clients. Operators set them in the console at `/admin/console/games/{id}/flags` (JSON API: `/admin/api/games/{id}/flags`); the server-rendered page stays at `/admin/games/{id}/flags`. Clients read `GET /v1/games/{gameId}/flags` or call `bantam.getFlags()` / `bantam.isEnabled(key)`.
 
 - `enabled` is the rollout decision for that caller: master switch off ⇒ `false`; `100%` ⇒ `true` for everyone including signed-out; `1-99%` ⇒ resolved per signed-in player, always `false` when anonymous (no stable id to bucket).
 - Bucketing is `HMAC-SHA256(flagKey + ":" + playerId, ${secretPrefix}_IDENTITY_SALT)` — stable across restarts and instances, and not correlatable across games.
@@ -52,7 +52,7 @@ The skill ships **zero** passwords, tokens, salts, PGS secrets, or session cooki
 2. Set `secretPrefix` (`^[A-Z][A-Z0-9_]{1,47}$`) and provision the env vars above on the host. Do not commit them.
 3. `authProvider`: `development` for local/Internal experiments; `pgs-v2` for Play Games server auth codes. Spec both; flip the manifest when Play OAuth exists. Live/production must not use development auth.
 4. Prefer `kind: "file"` adapters in a **sibling game repo**, compiled to `.js`/`.mjs`, mounted at `/bantam/adapters`. `source` is the **basename**. Restart the container to load new files (not hot-reloaded). Generic boards (`kind: "generic"`, max 16) accept claimed integers only — stub/demo, not competitive games.
-5. Put the game on the live manifest via `/admin` (writable `/data/games.json`) or a mounted `games.json` (read-only editor). First admin: `/admin/register` once, then `/admin/login`. The current dashboard does not show file-adapter boards or players; do not treat an empty game page as a missing game. Plan: `ADMIN_DASHBOARD_PLAN.md`.
+5. Put the game on the live manifest via `/admin` (writable `/data/games.json`) or a mounted `games.json` (read-only editor). First admin: `/admin/register` once, then `/admin/login`. The console at `/admin/console/` shows file-adapter boards, players and runs; the server-rendered pages remain at `/admin/legacy`. Do not treat an empty game page as a missing game. Plan: `ADMIN_DASHBOARD_PLAN.md`, gap analysis: `ADMIN_CONSOLE_GAP_ANALYSIS.md`.
 6. Client: `npm install @gamercury/bantam-sdk` from the **public npm registry** (not `file:../bantam`). `BantamClient` with `baseUrl`, `gameId`, `KeyValueStorage`. `optionalLogin` → `queueBest` after a valid run → `leaderboard` / `myRank` / `aroundMe`. Economy (optional catalog on the game): `getWallet` / `getInventory` / `getStore` / `purchaseItem` / `useItem` / `claimReward` / `submitIapPurchase`. `deleteMyData` for erasure. Offline queue is local; 4xx except 401/429 drops the run; 401 refreshes then retries. Maintainers publish with GitHub Actions trusted publishing (workflow `publish-sdk.yml`, GitHub user + repo, no org, no `NPM_TOKEN`). Docs: `docs/src/content/docs/sdk.md` and `docs/src/content/docs/economy.md`. Never publish `@gamercury/bantam` (server).
 7. Gameplay stays playable with login cancelled or the API down.
 

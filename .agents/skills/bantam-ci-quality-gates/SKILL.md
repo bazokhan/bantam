@@ -29,15 +29,20 @@ npm run docs:check                                       # docs build (verify do
 
 ## Adding a new admin endpoint
 
+The admin surface has two halves: the server-rendered pages in `src/admin/routes.ts`, and the JSON API in `src/admin/api.ts` that backs the React console (`packages/admin-ui`, served at `/admin/console/`).
+
 After you add a route:
 
-1. Edit `src/admin/routes.ts`.
-2. Add a test in `test/bantam.test.ts` covering at least the auth gate and a happy path.
-3. Run `npm run verify`.
-4. If you added a new request/response shape, also update `src/types.ts` and the TypeBox schema in `src/config.ts` or `src/admin/manifest-store.ts`.
-5. Run `npm run openapi:generate` to refresh `openapi/bantam.openapi.json`.
-6. Update the relevant docs page (`docs/src/content/docs/admin-dashboard.md` is the usual landing spot).
-7. Push.
+1. Edit `src/admin/routes.ts` (server-rendered) or `src/admin/api.ts` (console API).
+2. Define the request/response schema in `src/admin/api-schemas.ts` for console routes — request bodies must reject unknown fields.
+3. Add a test in `test/bantam.test.ts` (server-rendered) or `test/admin-api.test.ts` (console API) covering at least the auth gate and a happy path. A console route without a session must answer `401` with a JSON body, never a redirect.
+4. Run `npm run verify`.
+5. If you added a new request/response shape, also update `src/types.ts` and the TypeBox schema in `src/config.ts` or `src/admin/manifest-store.ts`.
+6. Run `npm run openapi:generate` to refresh `openapi/bantam.openapi.json`.
+7. Update the relevant docs page (`docs/src/content/docs/admin-dashboard.md` is the usual landing spot).
+8. Push.
+
+Console UI changes live in `packages/admin-ui`. That package has its own `lint`, `typecheck` and `format:check` scripts, all chained into the root `verify`. Build it with `npm run build:admin-ui`; the output lands in `dist/admin-ui`, which the server serves.
 
 ## Common test patterns
 

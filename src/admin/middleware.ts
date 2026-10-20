@@ -47,8 +47,22 @@ export function serializeCookie(
   return parts.join("; ");
 }
 
-export function clearCookieValue(name: string): string {
-  return `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict`;
+// The session cookie is scoped to /admin/. A deletion must use the same
+// Path, otherwise the browser keeps the original cookie and the operator
+// lands in a redirect loop instead of a logged-out state.
+export function clearCookieValue(name: string, options: { path?: string; secure?: boolean } = {}): string {
+  const parts = [`${name}=`, `Path=${options.path ?? "/admin/"}`, "Max-Age=0", "HttpOnly", "SameSite=Strict"];
+  if (options.secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+// BANTAM_ADMIN_COOKIE_SECURE overrides the protocol-derived default so an
+// operator can force Secure on a TLS-terminating proxy.
+export function cookieSecureFor(request: { protocol: string }): boolean {
+  const flag = process.env.BANTAM_ADMIN_COOKIE_SECURE;
+  if (flag === "true") return true;
+  if (flag === "false") return false;
+  return request.protocol === "https";
 }
 
 // Populate request.cookies on every /admin/* route. Other routes don't need it.
@@ -73,6 +87,14 @@ export function sessionCookieMiddleware(adminDb: AdminDatabase) {
     const cookie = cookies[ADMIN_COOKIE_NAME];
     const adminId = cookie ? verifySession(adminDb, cookie) : null;
     if (!adminId) {
+      // The JSON API answers with 401 so the console can react instead of
+      // silently following a redirect into the login page's HTML.
+      if (url.startsWith("/admin/api/")) {
+        return reply
+          .code(401)
+          .type("application/json")
+          .send({ error: { code: "unauthorized", message: "Sign in to use the admin API" } });
+      }
       if (request.method === "GET") {
         const target = encodeURIComponent(request.url);
         return reply.redirect(`/admin/login?next=${target}`, 302);
@@ -88,7 +110,7 @@ export function sessionCookieMiddleware(adminDb: AdminDatabase) {
   };
 }
 
-// For login/register pages: if already authenticated, redirect to /admin/.
+// For login/register pages: if already authenticated, redirect to the console.
 export function redirectIfAuthenticated(adminDb: AdminDatabase) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const url = request.routeOptions.url ?? request.url;
@@ -96,7 +118,7 @@ export function redirectIfAuthenticated(adminDb: AdminDatabase) {
     const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies ?? {};
     const cookie = cookies[ADMIN_COOKIE_NAME];
     if (cookie && verifySession(adminDb, cookie)) {
-      return reply.redirect("/admin/", 302);
+      return reply.redirect("/admin/console/", 302);
     }
   };
 }

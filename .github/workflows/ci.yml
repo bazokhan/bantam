@@ -42,9 +42,19 @@ jobs:
             sleep 1
           done
       - run: curl --fail http://127.0.0.1:3000/readyz
-      - run: >
-          curl --fail -H "Authorization: Bearer demo-only-admin-token-please-rotate"
-          http://127.0.0.1:3000/admin/
+      - name: Smoke test - admin console is served
+        run: |
+          set -euo pipefail
+          cookie=$(mktemp)
+          curl --fail --silent --show-error -c "$cookie" \
+            --data "username=ciadmin&password=ci-admin-password-1234&confirm=ci-admin-password-1234" \
+            http://127.0.0.1:3000/admin/register
+          status=$(curl --silent --output /tmp/console.html --write-out "%{http_code}" -b "$cookie" http://127.0.0.1:3000/admin/console/)
+          test "$status" = "200"
+          grep -q '<div id="root">' /tmp/console.html
+          status=$(curl --silent --output /tmp/overview.json --write-out "%{http_code}" -b "$cookie" http://127.0.0.1:3000/admin/api/overview)
+          test "$status" = "200"
+          node -e "const b=JSON.parse(require('fs').readFileSync('/tmp/overview.json','utf8')); if(!b.totals) process.exit(1);"
       - run: npm run smoke:http
       - if: always()
         run: docker logs bantam-ci --no-color || true

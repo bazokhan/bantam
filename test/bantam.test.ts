@@ -187,9 +187,11 @@ describe("SQLite durability and leaderboard semantics", () => {
     const root = temp();
     const migrations = join(root, "migrations");
     cpSync(join(process.cwd(), "migrations"), migrations, { recursive: true });
-    rmSync(join(migrations, "003_feature_flags.sql"));
-    rmSync(join(migrations, "004_economy.sql"));
-    rmSync(join(migrations, "005_economy_shop.sql"));
+    // Simulate a database from before the feature-flag migration. Drop every
+    // migration after 002 so the list stays contiguous as new ones land.
+    for (const file of readdirSync(migrations)) {
+      if (/^\d{3}_.+\.sql$/.test(file) && Number(file.slice(0, 3)) > 2) rmSync(join(migrations, file));
+    }
     const path = join(root, "game.sqlite");
     new GameDatabase(path, migrations).close();
     const before = new Database(path);
@@ -664,7 +666,7 @@ describe("admin dashboard P0 — overview, game page, boards", () => {
         headers: { authorization: `Bearer ${token}` },
         payload: { runId: "run-overview-1", payload: { high_score: 5 } },
       });
-      const page = await app.inject({ method: "GET", url: "/admin/", headers: { cookie } });
+      const page = await app.inject({ method: "GET", url: "/admin/legacy", headers: { cookie } });
       expect(page.statusCode).toBe(200);
       expect(page.body).toMatch(/class="v">1<\/div><div class="l">Games loaded/);
       expect(page.body).toMatch(/class="v">1<\/div><div class="l">Players \(all games\)/);
@@ -1045,7 +1047,7 @@ describe("admin dashboard P2 — settings form, prod guard, rollback", () => {
       const page = await app.inject({ method: "GET", url: "/admin/games/demo", headers: { cookie } });
       expect(page.body).toMatch(/extra_life/);
       expect(page.body).toMatch(/life_pack/);
-      const overview = await app.inject({ method: "GET", url: "/admin/", headers: { cookie } });
+      const overview = await app.inject({ method: "GET", url: "/admin/legacy", headers: { cookie } });
       expect(overview.body).toMatch(/action="\/admin\/logout"/);
       expect(overview.body).not.toMatch(/href="\/admin\/logout"/);
     } finally {

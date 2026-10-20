@@ -1,5 +1,13 @@
 # Admin dashboard plan
 
+> **Superseded (2026-10-20).** The server-rendered dashboard described below
+> shipped and still runs at `/admin/legacy`, but it was replaced as the primary
+> admin experience by the React console in `packages/admin-ui`, served at
+> `/admin/console/`. The "no SPA" constraint below was explicitly lifted by
+> the owner. The data contract, session model and safety rules in this document
+> still hold. See `ADMIN_CONSOLE_GAP_ANALYSIS.md` for the current architecture
+> and the feature-gap analysis.
+
 The live admin UI at `https://bantam-api.trugraph.io/admin/` is a login wall plus a JSON textarea. Operators cannot see players, pick boards, or flip `authProvider` without editing `games.json` by hand. That is a product gap, not missing data: a game is registered, `pgs-v2` is live, and `high_score` scores exist in SQLite.
 
 Do not put secrets, session cookies, or raw provider ids in this plan or in the future UI.
@@ -57,7 +65,7 @@ Keep the JSON textarea behind “Advanced JSON”. Default Manifest page:
 
 ## Constraints
 
-- Stay server-rendered HTML in `src/admin/`. No SPA, no client secrets in JS.
+- ~~Stay server-rendered HTML in `src/admin/`. No SPA, no client secrets in JS.~~ **Lifted 2026-10-20** — the console is a React SPA in `packages/admin-ui`, but it still ships no secrets to JavaScript: the session cookie stays `HttpOnly` and every value the console renders comes from a server-derived JSON response. The server-rendered pages stay at `/admin/legacy` as the no-JavaScript fallback.
 - Cookie `bantam_admin`, Path `/admin/`, HttpOnly, SameSite=Strict. Do not weaken that for “AJAX”.
 - `npm run verify` must cover new admin routes (happy path + CSRF/session missing + schema reject).
 - Production + `development` auth remains a boot error. The form must not offer a save that the schema allows but boot will throw, or it must surface that error before save.

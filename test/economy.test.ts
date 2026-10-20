@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -234,8 +234,11 @@ describe("economy foundation", () => {
     const root = temp();
     const oldMigrations = join(root, "old-migrations");
     cpSync(join(process.cwd(), "migrations"), oldMigrations, { recursive: true });
-    rmSync(join(oldMigrations, "004_economy.sql"));
-    rmSync(join(oldMigrations, "005_economy_shop.sql"));
+    // Simulate a database from before the economy migrations. Drop every
+    // migration after 003 so the list stays contiguous as new ones land.
+    for (const file of readdirSync(oldMigrations)) {
+      if (/^\d{3}_.+\.sql$/.test(file) && Number(file.slice(0, 3)) > 3) rmSync(join(oldMigrations, file));
+    }
     const path = join(root, "game.sqlite");
     const oldDb = new GameDatabase(path, oldMigrations);
     try {
@@ -281,7 +284,7 @@ describe("economy foundation", () => {
       ).toBe(5);
       expect(
         upgraded.db.prepare("SELECT version FROM schema_migrations ORDER BY version").pluck().all(),
-      ).toEqual([1, 2, 3, 4, 5]);
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
       expect(upgraded.integrity()).toEqual(["ok"]);
     } finally {
       upgraded.close();

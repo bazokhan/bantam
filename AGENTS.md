@@ -7,6 +7,8 @@
 - Never edit an applied migration. Add a new ordered migration, retain checksum validation, and test both fresh install and upgrade.
 - Deterministic adapter changes require regenerated golden fixtures (where the adapter ships its own) and tampering regressions. Cross-repo contract checks run only when an associated sibling adapter repository is available in this checkout.
 - Run format check, lint, typecheck, unit/integration tests, OpenAPI drift check, production build, container smoke, and backup/restore before calling a release ready. A skipped required lane is a blocker.
+- The admin console is a React SPA in `packages/admin-ui`, served at `/admin/console/` by the Fastify server. Its JSON API is `src/admin/api.ts` under `/admin/api/*`; schemas live in `src/admin/api-schemas.ts`. The server-rendered pages stay at `/admin/legacy` as a no-JavaScript fallback.
+- The console's wire types are derived from the server's TypeBox schemas (`packages/admin-ui/src/lib/types.ts` imports them via the `@server/*` path alias). Change the schema, not the client's copy — a hand-written duplicate is a silent runtime bug, not a type error.
 - Secrets belong in environment variables or the deployment secret store. Never commit `.env`, service-account JSON, OAuth secrets, S3 credentials, raw deployment dumps, database files, or restored player data.
 - Live dashboard credentials for `https://bantam-api.trugraph.io/admin/login` live only in `deploy/the deployment secret store` (gitignored). Document the path, never the values.
 - Restore commands must target one validated game. Never overwrite an existing database without an explicit `--force` recovery invocation while the service is stopped.

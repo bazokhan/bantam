@@ -22,6 +22,27 @@ export type AdminSessionRow = {
   created_at: number;
 };
 
+export type AdminAuditRow = {
+  id: number;
+  admin_id: string | null;
+  admin_username: string;
+  action: string;
+  game_id: string | null;
+  target: string | null;
+  details: string;
+  created_at: number;
+};
+
+export type AdminAuditEntry = {
+  adminId: string | null;
+  adminUsername: string;
+  action: string;
+  gameId: string | null;
+  target: string | null;
+  details: string;
+  now: number;
+};
+
 export class AdminDatabase {
   readonly db: Database.Database;
 
@@ -110,5 +131,64 @@ export class AdminDatabase {
     this.db
       .prepare("UPDATE admin_sessions SET revoked_at=? WHERE family_id=? AND revoked_at IS NULL")
       .run(now, familyId);
+  }
+
+  // Append-only. Nothing in the server updates or deletes an audit row.
+  insertAudit(entry: AdminAuditEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO admin_audit(admin_id, admin_username, action, game_id, target, details, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.adminId,
+        entry.adminUsername,
+        entry.action,
+        entry.gameId,
+        entry.target,
+        entry.details,
+        entry.now,
+      );
+  }
+
+  listAudit(limit: number, filter: { action?: string; gameId?: string } = {}): AdminAuditRow[] {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filter.action) {
+      where.push("action=?");
+      params.push(filter.action);
+    }
+    if (filter.gameId) {
+      where.push("game_id=?");
+      params.push(filter.gameId);
+    }
+    const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+    params.push(limit);
+    return this.db
+      .prepare(
+        `SELECT id, admin_id, admin_username, action, game_id, target, details, created_at
+         FROM admin_audit ${clause} ORDER BY created_at DESC, id DESC LIMIT ?`,
+      )
+      .all(...params) as AdminAuditRow[];
+  }
+
+  countAudit(filter: { action?: string; gameId?: string } = {}): number {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (filter.action) {
+      where.push("action=?");
+      params.push(filter.action);
+    }
+    if (filter.gameId) {
+      where.push("game_id=?");
+      params.push(filter.gameId);
+    }
+    const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+    return (
+      (this.db
+        .prepare(`SELECT count(*) value FROM admin_audit ${clause}`)
+        .pluck()
+        .get(...params) as number) ?? 0
+    );
   }
 }

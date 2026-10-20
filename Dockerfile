@@ -2,6 +2,7 @@ FROM node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a986
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY packages/sdk/package.json packages/sdk/package.json
+COPY packages/admin-ui/package.json packages/admin-ui/package.json
 RUN npm install --ignore-scripts=false
 COPY tsconfig.json tsconfig.build.json eslint.config.js .prettierrc.json ./
 COPY src src

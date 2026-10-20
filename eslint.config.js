@@ -9,6 +9,7 @@ export default tseslint.config(
       "openapi",
       ".npm-cache*",
       "packages/sdk/dist",
+      "packages/admin-ui",
       "eslint.config.js",
       "test/fixtures/adapters/**",
       "docs/**",

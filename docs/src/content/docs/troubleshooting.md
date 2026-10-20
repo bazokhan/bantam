@@ -29,7 +29,7 @@ Check the exact deployment/game replica prefix, bucket endpoint, region, path-st
 
 ## IAP submit returns 503 `iap-not-configured`
 
-The game catalog lists a Google Play product but `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` is missing. Set the service-account JSON in the deployment secret store (never commit it), restart the container, and retry. Presence is shown on `/admin/games/:id` as a required env key; the value is never rendered. See [Game economy](/economy/#google-play-iap).
+The game catalog lists a Google Play product but `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` is missing. Set the service-account JSON in the deployment secret store (never commit it), restart the container, and retry. Presence is shown on the console's game page at `/admin/console/games/{id}` as a required env key; the value is never rendered. See [Game economy](/economy/#google-play-iap).
 
 ## Shop purchase returns 409 `insufficient-funds`
 

@@ -3,7 +3,30 @@ title: Admin dashboard
 description: Session-cookie admin UI for the manifest, feature flags, boards, runs, and player economy.
 ---
 
-The framework includes a session-cookie admin UI on the same port as the API. It is reachable at `/admin/`.
+The framework includes a session-cookie admin UI on the same port as the API. It is reachable at `/admin/`, which redirects to the console at `/admin/console/`.
+
+## The console
+
+`/admin/console/` is a React single-page console (built from `packages/admin-ui`, served by the same Fastify process). It covers the same ground as the server-rendered pages, with a persistent sidebar, a game switcher, a command palette (`⌘K` / `Ctrl-K`), and light/dark themes.
+
+The console talks to a JSON API under `/admin/api/`. The session cookie is `HttpOnly` and `SameSite=Strict`, so the browser attaches it to same-origin requests automatically — no token is ever exposed to JavaScript. Unauthenticated API calls return `401` with a JSON body rather than a redirect.
+
+| Screen              | Path                                   |
+| ------------------- | -------------------------------------- |
+| Overview            | `/admin/console/`                      |
+| Games               | `/admin/console/games`                 |
+| Game detail         | `/admin/console/games/:gameId`         |
+| Leaderboards        | `/admin/console/games/:gameId/boards`  |
+| Players             | `/admin/console/games/:gameId/players` |
+| Runs                | `/admin/console/games/:gameId/runs`    |
+| Feature flags       | `/admin/console/games/:gameId/flags`   |
+| Economy             | `/admin/console/games/:gameId/economy` |
+| Adapters            | `/admin/console/adapters`              |
+| Health              | `/admin/console/health`                |
+| Audit trail         | `/admin/console/audit`                 |
+| Settings (manifest) | `/admin/console/settings`              |
+
+The console is a build artifact of the image. If it has not been built, `/admin/console/` returns `503` with a short page explaining how to build it, and the server-rendered pages below stay available as a fallback.
 
 ## First-run registration
 
@@ -25,7 +48,7 @@ The session cookie (`bantam_admin`) is:
 - `Path=/admin/` — scoped to admin routes.
 - 30-day expiry, rolling via the server's `admin_sessions` table.
 
-Any `/admin/*` request without a valid cookie is redirected to `/admin/login?next=<url>` (for GET) or returns 401 (for POST/PUT/DELETE).
+Any `/admin/*` request without a valid cookie is redirected to `/admin/login?next=<url>` (for GET) or returns 401 (for POST/PUT/DELETE). Requests under `/admin/api/` always return `401` with a JSON body, including GET, so the console can detect an expired session without following a redirect into the login page's HTML.
 
 ## Logout
 
@@ -80,10 +103,62 @@ Every write is gated by the admin session cookie, and each change is logged with
 
 ## Routes
 
+### Console API
+
+All routes below require the session cookie and answer `401` (JSON) without it.
+
+| Method | Path                                              | Purpose                                                                             |
+| ------ | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| GET    | `/admin/api/session`                              | Signed-in admin identity and whether first-run registration is open.                |
+| POST   | `/admin/api/logout`                               | Revoke the session and clear the cookie.                                            |
+| GET    | `/admin/api/overview`                             | KPIs, 7-day activity series, per-game summary, recent score entries.                |
+| GET    | `/admin/api/games`                                | Per-game summary (id, name, auth, boards, players, flags, env presence).            |
+| GET    | `/admin/api/games/:id`                            | Game detail: grace period, environment, adapters, boards, env keys.                 |
+| GET    | `/admin/api/games/:id/boards/:boardId`            | Ranked entries for a board and its available period keys.                           |
+| GET    | `/admin/api/games/:id/players`                    | Player table plus the total player count.                                           |
+| GET    | `/admin/api/games/:id/players/:playerId`          | Wallet, ledger, inventory ledger, store purchases, IAP state, run count.            |
+| GET    | `/admin/api/games/:id/players/:playerId/entries`  | Every board and period the player is ranked on, with their rank on each.            |
+| POST   | `/admin/api/games/:id/players/:playerId/currency` | Audited credit/debit for a catalog currency, with a reason.                         |
+| POST   | `/admin/api/games/:id/players/:playerId/item`     | Audited grant/remove of a catalog item, with a reason.                              |
+| DELETE | `/admin/api/games/:id/players/:playerId`          | Delete a single player; reuses the same `deletePlayer` path the public API exposes. |
+| GET    | `/admin/api/games/:id/runs`                       | Recent score entries with board, value and player.                                  |
+| GET    | `/admin/api/games/:id/flags`                      | Feature flags with their targeting summary.                                         |
+| PUT    | `/admin/api/games/:id/flags/:key`                 | Create or replace a flag by key.                                                    |
+| POST   | `/admin/api/games/:id/flags/:key/toggle`          | Flip enabled without touching rollout or value.                                     |
+| DELETE | `/admin/api/games/:id/flags/:key`                 | Delete a flag (confirm-guarded).                                                    |
+| GET    | `/admin/api/games/:id/economy`                    | Catalog plus the live summary: supply, holders and ledger velocity.                 |
+| GET    | `/admin/api/health`                               | Per-game db readiness, adapter coverage, env completeness, CORS origins.            |
+| GET    | `/admin/api/adapters`                             | Loaded adapters and the games that reference them.                                  |
+| GET    | `/admin/api/audit`                                | The operator action trail. Supports `limit`, `action` and `gameId` filters.         |
+| GET    | `/admin/api/manifest`                             | The manifest document and the current environment.                                  |
+| PUT    | `/admin/api/manifest`                             | Save + reload runtimes; rolls back on reload failure.                               |
+
+### Audit trail
+
+Every write the console performs appends one row to `admin_audit` in the admin database: the acting admin, the action, the game, the target, a small JSON detail object, and the timestamp. The trail is append-only — nothing in the server updates or deletes an audit row — and it lives in the server-level admin database, so it survives a game database being reset.
+
+| Action            | Recorded when                            |
+| ----------------- | ---------------------------------------- |
+| `flag.write`      | A flag is created or edited.             |
+| `flag.toggle`     | A flag is enabled or disabled.           |
+| `flag.delete`     | A flag is removed.                       |
+| `player.delete`   | A player is deleted.                     |
+| `currency.credit` | An operator credits a player's currency. |
+| `currency.debit`  | An operator debits a player's currency.  |
+| `item.grant`      | An operator grants an item.              |
+| `item.remove`     | An operator removes an item.             |
+| `manifest.save`   | The manifest is saved.                   |
+
+The detail object never carries credentials, tokens, raw provider ids, IP addresses or headers — it holds only the values the operator typed, such as the amount, the currency id and the reason.
+
+### Server-rendered pages
+
+These remain available as a no-JavaScript fallback. `/admin/` redirects to the console; `/admin/legacy` is the old overview page.
+
 | Method | Path                                          | Purpose                                                                                                 |
 | ------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| GET    | `/admin/`                                     | Overview: counts (games, players, runs today) and a one-line per-game summary.                          |
-| GET    | `/admin/login`                                | Login form (or auto-redirects to `/admin/` if already authenticated).                                   |
+| GET    | `/admin/legacy`                               | Legacy overview: counts (games, players, runs today) and a one-line per-game summary.                   |
+| GET    | `/admin/login`                                | Login form (or auto-redirects to `/admin/console/` if already authenticated).                           |
 | POST   | `/admin/login`                                | Submit credentials, issue session cookie.                                                               |
 | GET    | `/admin/register`                             | First-admin registration form. 404 once any admin exists.                                               |
 | POST   | `/admin/register`                             | Create inaugural admin. 404 once any admin exists.                                                      |
@@ -107,5 +182,7 @@ Every write is gated by the admin session cookie, and each change is logged with
 ## Trust
 
 The admin UI is server-global (one `data/admin.sqlite` per deployment, litestream-replicated as part of the `/data` volume). All write actions are gated by the session cookie; the cookie is HttpOnly + SameSite=Strict; CSRF is mitigated by the cookie's same-origin requirement and the absence of any third-party JS on these pages.
+
+The console is first-party JavaScript served from the same origin. It is a static bundle with no third-party script, no analytics, and no remote font or image fetch. It never receives a secret: env vars are reported as present/missing only, session tokens stay in the `HttpOnly` cookie, and every value it renders comes from a server-derived JSON response. Leaderboard values are derived by the versioned server adapter inside the run transaction — the console has no write path for scores.
 
 The OpenAPI spec at `/openapi.json` is public, but every `/admin/*` route is hidden from it (the swagger plugin sees `schema.hide = true` on these routes via an `onRoute` hook in `app.ts`). The admin UI is the only privileged surface; SDK generators and external clients only see `/v1/*`.

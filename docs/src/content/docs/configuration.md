@@ -45,7 +45,7 @@ See [Authoring — Generic boards](/generic-boards/) and [Authoring — File ada
 
 ## Editing from the dashboard
 
-The [admin dashboard](/admin-dashboard/) has a Manifest page at `/admin/manifest`. Changes are validated against the same TypeBox schema the boot loader runs, then written atomically (write to `<path>.tmp` then rename). On success the server hot-reloads runtimes; no container restart is needed.
+The [admin console](/admin-dashboard/) has a Settings page at `/admin/console/settings` (the server-rendered editor remains at `/admin/manifest`). Changes are validated against the same TypeBox schema the boot loader runs, then written atomically (write to `<path>.tmp` then rename). On success the server hot-reloads runtimes; no container restart is needed.
 
 If the manifest path is read-only (e.g. a `:ro` mount in compose), the editor is disabled and a banner explains how to switch to a writable path. Saving a manifest that fails schema validation returns 400 with the error list rendered in the response.
 

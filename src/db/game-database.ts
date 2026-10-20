@@ -538,6 +538,195 @@ export class GameDatabase {
     return rows.map((row) => ({ ...row, createdAt: new Date(row.createdAt) }));
   }
 
+  // ─── Admin analytics ──────────────────────────────────────────────────────
+  // Read-only counters behind the admin console's dashboard. All are bounded
+  // by an explicit limit or a day range so a busy game cannot turn an
+  // overview request into a full table scan.
+
+  lastRunAt(): number | null {
+    const value = this.db.prepare("SELECT max(created_at) value FROM runs").pluck().get() as number | null;
+    return value ?? null;
+  }
+
+  countRunsSince(sinceMs: number): number {
+    return (
+      (this.db
+        .prepare("SELECT count(*) value FROM runs WHERE created_at>=?")
+        .pluck()
+        .get(sinceMs) as number) ?? 0
+    );
+  }
+
+  // New players and submitted runs per UTC day, oldest first, with empty days
+  // filled in so the chart has a continuous x-axis.
+  dailyActivity(days: number, nowMs: number): Array<{ date: string; players: number; runs: number }> {
+    const dayMs = 86_400_000;
+    const since = nowMs - days * dayMs;
+    const playerRows = this.db
+      .prepare(
+        "SELECT date(created_at/1000,'unixepoch') day, count(*) value FROM players WHERE created_at>=? GROUP BY day",
+      )
+      .all(since) as Array<{ day: string; value: number }>;
+    const runRows = this.db
+      .prepare(
+        "SELECT date(created_at/1000,'unixepoch') day, count(*) value FROM runs WHERE created_at>=? GROUP BY day",
+      )
+      .all(since) as Array<{ day: string; value: number }>;
+    const playersByDay = new Map(playerRows.map((row) => [row.day, row.value]));
+    const runsByDay = new Map(runRows.map((row) => [row.day, row.value]));
+    const out: Array<{ date: string; players: number; runs: number }> = [];
+    for (let offset = days - 1; offset >= 0; offset--) {
+      const day = new Date(nowMs - offset * dayMs).toISOString().slice(0, 10);
+      out.push({
+        date: day,
+        players: playersByDay.get(day) ?? 0,
+        runs: runsByDay.get(day) ?? 0,
+      });
+    }
+    return out;
+  }
+
+  // Newest score entries across all boards, with the player's display name.
+  recentEntries(limit: number): Array<{
+    id: string;
+    boardId: string;
+    period: string;
+    value: number;
+    createdAt: number;
+    playerId: string;
+    displayName: string;
+  }> {
+    this.assertLimit(limit);
+    return this.db
+      .prepare(
+        `SELECT e.id, e.board_id boardId, e.period_key period, e.value, e.achieved_at createdAt,
+          e.player_id playerId, p.display_name displayName
+        FROM leaderboard_entries e JOIN players p ON p.id=e.player_id
+        ORDER BY e.achieved_at DESC, e.id DESC LIMIT ?`,
+      )
+      .all(limit) as Array<{
+      id: string;
+      boardId: string;
+      period: string;
+      value: number;
+      createdAt: number;
+      playerId: string;
+      displayName: string;
+    }>;
+  }
+
+  countBoardEntries(boardId: string, periodKey: string): number {
+    return (
+      (this.db
+        .prepare("SELECT count(*) value FROM leaderboard_entries WHERE board_id=? AND period_key=?")
+        .pluck()
+        .get(boardId, periodKey) as number) ?? 0
+    );
+  }
+
+  countEntries(): number {
+    return (this.db.prepare("SELECT count(*) value FROM leaderboard_entries").pluck().get() as number) ?? 0;
+  }
+
+  getPlayerRow(playerId: string): PlayerRow | undefined {
+    return this.db
+      .prepare("SELECT id, provider, display_name displayName, created_at createdAt FROM players WHERE id=?")
+      .get(playerId) as PlayerRow | undefined;
+  }
+
+  // Admin listing of one board. Same ranking as `list`, but also returns the
+  // player id and the time the score was achieved, which the console shows.
+  listAdmin(
+    board: BoardDefinition,
+    periodKey: string,
+    limit: number,
+  ): Array<{
+    playerId: string;
+    displayName: string;
+    value: number;
+    rank: number;
+    updatedAt: number;
+  }> {
+    this.assertLimit(limit);
+    const direction = board.direction === "higher" ? "DESC" : "ASC";
+    return this.db
+      .prepare(
+        `SELECT playerId,displayName,value,rank,updatedAt FROM (
+      SELECT e.player_id playerId,p.display_name displayName,e.value,
+        e.achieved_at updatedAt,
+        RANK() OVER (ORDER BY e.value ${direction}) rank,
+        ROW_NUMBER() OVER (ORDER BY e.value ${direction}, e.achieved_at ASC, e.id ASC) ordinal
+      FROM leaderboard_entries e JOIN players p ON p.id=e.player_id
+      WHERE e.board_id=? AND e.period_key=?) WHERE ordinal>0 ORDER BY ordinal LIMIT ?`,
+      )
+      .all(board.id, periodKey, limit) as Array<{
+      playerId: string;
+      displayName: string;
+      value: number;
+      rank: number;
+      updatedAt: number;
+    }>;
+  }
+
+  // Every board and period one player appears on, with the rank the player
+  // holds there. The rank uses the same rule as `listAdmin` — a strict
+  // comparison on the value, so tied scores share a rank — and the board
+  // direction decides which side is better.
+  playerEntries(
+    playerId: string,
+    directions: ReadonlyMap<string, "higher" | "lower">,
+  ): Array<{
+    boardId: string;
+    period: string;
+    rank: number;
+    value: number;
+    achievedAt: number;
+    runId: string;
+  }> {
+    const boards = this.db
+      .prepare("SELECT DISTINCT board_id boardId FROM leaderboard_entries WHERE player_id=?")
+      .all(playerId) as Array<{ boardId: string }>;
+    const out: Array<{
+      boardId: string;
+      period: string;
+      rank: number;
+      value: number;
+      achievedAt: number;
+      runId: string;
+    }> = [];
+    for (const { boardId } of boards) {
+      const better = directions.get(boardId) === "lower" ? "<" : ">";
+      const rows = this.db
+        .prepare(
+          `SELECT e.period_key period, e.value, e.achieved_at achievedAt, e.run_id runId,
+            (SELECT count(*) + 1 FROM leaderboard_entries c
+              WHERE c.board_id = e.board_id AND c.period_key = e.period_key
+                AND c.value ${better} e.value) rank
+           FROM leaderboard_entries e
+           WHERE e.board_id = ? AND e.player_id = ?
+           ORDER BY e.period_key, e.value ${better === "<" ? "ASC" : "DESC"}`,
+        )
+        .all(boardId, playerId) as Array<{
+        period: string;
+        value: number;
+        achievedAt: number;
+        runId: string;
+        rank: number;
+      }>;
+      for (const row of rows) out.push({ boardId, ...row });
+    }
+    return out;
+  }
+
+  // Run counts for every player in one query, so the players list does not
+  // fan out into a per-row count.
+  runCountsByPlayer(): Map<string, number> {
+    const rows = this.db
+      .prepare("SELECT player_id playerId, count(*) value FROM runs GROUP BY player_id")
+      .all() as Array<{ playerId: string; value: number }>;
+    return new Map(rows.map((row) => [row.playerId, row.value]));
+  }
+
   listFlags(): FeatureFlagRow[] {
     return this.db
       .prepare(
@@ -600,6 +789,52 @@ export class GameDatabase {
         FROM inventory_transactions WHERE player_id=? ORDER BY id DESC LIMIT ?`,
       )
       .all(playerId, limit) as InventoryTransactionRow[];
+  }
+
+  // Aggregate view of the economy: how much of each currency and item is in
+  // circulation, how many players hold it, and how fast the ledgers move.
+  // Every figure is a count or a sum over the tables already in this database.
+  economySummary(sinceMs: number): {
+    currencies: Array<{ currency: string; amount: number; holders: number }>;
+    items: Array<{ item: string; quantity: number; holders: number }>;
+    walletTransactions: { today: number; total: number };
+    inventoryTransactions: { today: number; total: number };
+    playersWithBalance: number;
+  } {
+    const currencies = this.db
+      .prepare(
+        `SELECT currency_id currency, sum(balance) amount, count(*) holders
+         FROM wallets WHERE balance > 0 GROUP BY currency_id ORDER BY currency_id`,
+      )
+      .all() as Array<{ currency: string; amount: number; holders: number }>;
+    const items = this.db
+      .prepare(
+        `SELECT item_id item, sum(quantity) quantity, count(*) holders
+         FROM inventory WHERE quantity > 0 GROUP BY item_id ORDER BY item_id`,
+      )
+      .all() as Array<{ item: string; quantity: number; holders: number }>;
+    const wallet = this.db
+      .prepare(
+        "SELECT count(*) total, count(CASE WHEN created_at >= ? THEN 1 END) today FROM wallet_transactions",
+      )
+      .get(sinceMs) as { total: number; today: number };
+    const inventory = this.db
+      .prepare(
+        "SELECT count(*) total, count(CASE WHEN created_at >= ? THEN 1 END) today FROM inventory_transactions",
+      )
+      .get(sinceMs) as { total: number; today: number };
+    const playersWithBalance =
+      (this.db
+        .prepare("SELECT count(DISTINCT player_id) value FROM wallets WHERE balance > 0")
+        .pluck()
+        .get() as number) ?? 0;
+    return {
+      currencies,
+      items,
+      walletTransactions: wallet,
+      inventoryTransactions: inventory,
+      playersWithBalance,
+    };
   }
 
   listStorePurchases(playerId: string, limit = 100): StorePurchaseRow[] {
