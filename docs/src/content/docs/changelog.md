@@ -23,7 +23,7 @@ Admin-facing only. The public `/v1` API and the SDK are unchanged.
 
 ## 0.3.1 - IAP consume and timed sales
 
-- IAP `packageName` accepts uppercase segments (real Play ids like `com.example.MyGame`).
+- IAP `packageName` accepts uppercase segments (for example `com.example.MyGame`).
 - Google Play consumable fulfillment calls `purchases.products.consume` after grant (implies acknowledge) so coin packs can be bought again. Permanent IAP still uses acknowledge.
 - Optional offer windows (`startsAtMs` / `endsAtMs`) and sale fields (`salePriceAmount`, `saleStartsAtMs`, `saleEndsAtMs`). Store returns effective `priceAmount` plus optional `listPriceAmount` / `saleEndsAtMs`. Purchases charge the same effective price.
 - Optional IAP `active` / window fields. `GET /economy/store` also returns visible `iapProducts` (ids and grants; USD still from Play Billing).

@@ -61,7 +61,7 @@ Classic YAML parse error. Common causes:
 
 The OpenAPI generator builds a one-game config and compares to `openapi/bantam.openapi.json`. New admin endpoints appear in the snapshot. `npm run openapi:generate` rewrites; `npm run openapi:check` validates.
 
-### "Vercel CLI login as user `another-login` but you expected `bazokhan`"
+### "Vercel CLI is logged in as a different GitHub user than the one that owns the repo"
 
 The repo's `.git/config` had a stored user from a previous push. Two options:
 

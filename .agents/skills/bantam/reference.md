@@ -142,4 +142,4 @@ Public npm: `npm install @gamercury/bantam-sdk`. Source: `packages/sdk`. Do not 
 | `BANTAM_METRICS_TOKEN`                             | Optional metrics gate                                                               |
 | `PORT`                                             | Default 3000                                                                        |
 
-Never paste values. Operator admin path: `deploy/the deployment secret store`.
+Never paste values.

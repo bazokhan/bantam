@@ -8,13 +8,13 @@
 > still hold. See `ADMIN_CONSOLE_GAP_ANALYSIS.md` for the current architecture
 > and the feature-gap analysis.
 
-The live admin UI at `https://bantam-api.trugraph.io/admin/` is a login wall plus a JSON textarea. Operators cannot see players, pick boards, or flip `authProvider` without editing `games.json` by hand. That is a product gap, not missing data: a game is registered, `pgs-v2` is live, and `high_score` scores exist in SQLite.
+The admin UI at that point was a login wall plus a JSON textarea. Operators could not see players, pick boards, or flip `authProvider` without editing `games.json` by hand.
 
 Do not put secrets, session cookies, or raw provider ids in this plan or in the future UI.
 
 ## Why it looks empty today
 
-`GET /admin/games/:gameId` only renders a top-10 if the game’s manifest adapter is `kind: "generic"`. File adapters (`kind: "file"`, e.g. `example-game-v1.mjs`) load boards at runtime, but the page ignores `runtime.adapters` and prints **No boards**. Runs exist under `/admin/games/:id/runs` (hash only). The Manifest page is a raw JSON blob (`max-width: 28rem` textarea), so flipping auth is a copy-paste operation.
+`GET /admin/games/:gameId` only renders a top-10 if the game’s manifest adapter is `kind: "generic"`. File adapters (`kind: "file"`, e.g. `my-game-v1.mjs`) load boards at runtime, but the page ignores `runtime.adapters` and prints **No boards**. Runs exist under `/admin/games/:id/runs` (hash only). The Manifest page is a raw JSON blob (`max-width: 28rem` textarea), so flipping auth is a copy-paste operation.
 
 Existing, keep: cookie session, first-admin register-then-lock, HTML templates with `escapeHtml`, hot-reload via `POST /admin/manifest`, no payload bodies in run lists.
 
@@ -26,9 +26,9 @@ An operator who can log in should, without JSON:
 2. Open a board and see the current page (rank, display name, value) — including **file** adapters.
 3. List players (truncated id, display name, provider, created) and delete one with a confirm (same `deletePlayer` path as `DELETE /v1/games/{id}/me`).
 4. Change `authProvider`, `gracePeriodHours`, `displayName`, and host `environment` with a form that round-trips the full manifest (merge; never drop other games).
-5. Stay game-agnostic. No a game-only routes. Boards and adapters come from the loaded runtime.
+5. Stay game-agnostic. No title-specific routes. Boards and adapters come from the loaded runtime.
 
-Out of scope: ads, IAP, analytics, Play Console, Coolify env writes, showing secret values, unredacted run payloads, full Play Games player ids in logs.
+Out of scope: ads, IAP, analytics, Play Console, orchestrator env writes, showing secret values, unredacted run payloads, full Play Games player ids in logs.
 
 ## Phases
 
@@ -72,4 +72,4 @@ Keep the JSON textarea behind “Advanced JSON”. Default Manifest page:
 
 ## Done when
 
-An operator can open `/admin/`, click a game (or any file-adapter game), see `high_score` (or that game’s boards), see signed-in players, flip `authProvider` with a dropdown, and delete a test player — without pasting JSON and without seeing secrets.
+An operator can open `/admin/`, open any file-adapter game, see that game’s boards, see signed-in players, flip `authProvider` with a dropdown, and delete a test player — without pasting JSON and without seeing secrets.

@@ -38,8 +38,8 @@ Per-game, server-resolved, read-only to clients. Operators set them in the conso
 
 The skill ships **zero** passwords, tokens, salts, PGS secrets, or session cookies.
 
-- May name **paths and env var names only**.
-- Operator admin file (gitignored): `deploy/the deployment secret store`. If it exists, **read it; never echo values** into chat, commits, issues, plans, or examples.
+- May name **env var names only**. Never name a credential file path.
+- If operator credentials exist outside git, read them for local wiring and never echo values into chat, commits, issues, plans, or examples.
 - Per-game env (all values min length 16): `${secretPrefix}_IDENTITY_SALT`, `${secretPrefix}_SESSION_SECRET`, `${secretPrefix}_CURSOR_SECRET`. For `pgs-v2` also `${secretPrefix}_PGS_CLIENT_ID` and `${secretPrefix}_PGS_CLIENT_SECRET`. For Google Play IAP products, `${secretPrefix}_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (service-account JSON; name only).
 - CORS: `BANTAM_ALLOWED_ORIGINS` (comma-separated).
 - Never log bodies, credentials, tokens, raw provider IDs, IP addresses, or unredacted headers (`AGENTS.md`).

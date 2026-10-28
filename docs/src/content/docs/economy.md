@@ -5,7 +5,7 @@ description: Server-authoritative wallets, inventory, virtual shop, and Google P
 
 Bantam can host a small, reusable economy for any title. The server owns balances, prices, ownership, and IAP fulfillment. Clients send evidence — an offer id, a request id, or a store purchase token — never a price or a balance.
 
-a game is the first intended consumer. This repository stays game-agnostic: each title declares its catalog in `games.json`. Gameplay integration (UI, Google Play Billing SDK, mission rewards) lives in the game repo.
+This repository stays game-agnostic: each title declares its catalog in `games.json`. Gameplay integration (UI, Google Play Billing SDK, mission rewards) lives in the game repo.
 
 ## What the server owns
 
@@ -109,9 +109,9 @@ await bantam.submitIapPurchase(purchaseToken, "coins_100");
 
 See [API and SDK](/reference/) for the full method list.
 
-## Wiring a game (including a game)
+## Wiring a game
 
-This server does not ship a game configuration. In the game repo:
+This server does not ship a game's catalog. In the game repo:
 
 1. Add an `economy` catalog to that title's `games.json` entry (coin packs, skins, starter reward).
 2. Install `@gamercury/bantam-sdk` and render wallet, inventory, and store from the methods above.

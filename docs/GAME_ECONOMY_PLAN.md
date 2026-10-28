@@ -1,11 +1,11 @@
 # Game Economy Extension Plan
 
-Status: Phases 1–4 are implemented in this repository. Phase 5 (a game client
+Status: Phases 1–4 are implemented in this repository. Phase 5 (client
 wiring) belongs in the game repo and is documented as an integration contract.
 
 ## Goal
 
-Extend Bantam with a small, reusable, server-authoritative game economy. a game is the first consumer, but the API and data model should work for other games.
+Extend Bantam with a small, reusable, server-authoritative game economy. The API and data model are for any title.
 
 The scope is wallets/currencies, a transaction ledger, inventory, purchases using virtual currency, and verified real-money in-app purchases (IAP). This is not intended to become a general e-commerce platform.
 
@@ -154,7 +154,7 @@ Do not expose ordinary client methods such as `setBalance` or unrestricted `gran
 - Admin player economy page with audited currency and inventory adjustments.
 - Docs cover threat model, idempotency, and operational recovery.
 
-### Phase 5 — a game integration (game repo)
+### Phase 5 — Game client integration (game repo)
 
 - Configure coin-pack products and offers in that title's `games.json`.
 - Display wallet, inventory, and store state from Bantam.
