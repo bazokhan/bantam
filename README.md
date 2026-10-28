@@ -77,3 +77,13 @@ npx skills add bazokhan/bantam --skill bantam
 ```
 
 Canonical files: `.agents/skills/bantam/SKILL.md` and `.agents/skills/bantam/reference.md`. Local fallback: `npx skills add D:/Gamercury/bantam --skill bantam`. List discoverable skills with `npx skills add D:/Gamercury/bantam -l`. Do not put passwords or tokens in the skill.
+
+## License
+
+Copyright (C) 2026 Gamercury Studio.
+
+The Bantam server — everything in this repository except `packages/sdk` — is licensed under the GNU Affero General Public License, version 3, or (at your option) any later version. The full text is `LICENSE`.
+
+You may use Bantam, modify it, and run it as a service. If you distribute Bantam or a modified version, or if you offer a modified version over a network, you must publish that source under the same license, keep the copyright and license notices, and you receive a patent license from each contributor so they cannot patent the work and then stop others from using the version they received.
+
+`packages/sdk` (`@gamercury/bantam-sdk`) is MIT. See `packages/sdk/LICENSE`. Installing the client in a game does not license the game under the AGPL.

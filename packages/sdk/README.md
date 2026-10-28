@@ -32,3 +32,5 @@ await bantam.purchaseItem("life_pack", crypto.randomUUID());
 ```
 
 Publish workflow (maintainers): see [SDK publish](https://bantam.trugraph.io/sdk/). Do not publish the server package `@gamercury/bantam`.
+
+This package is MIT (`LICENSE`). The Bantam server is AGPL-3.0-or-later; embedding this client does not license your game under the AGPL.

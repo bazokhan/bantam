@@ -218,7 +218,7 @@ Same container, same game id:
   </div>
   <div class="grid-card">
     <h3>No proprietary lock-in</h3>
-    <p>The OpenAPI spec, SDK source, and adapter contract are all open. Move off when you outgrow it.</p>
+    <p>The server is AGPL-3.0-or-later, so modified versions stay public and attributed. The client SDK is MIT.</p>
   </div>
 </div>
 
